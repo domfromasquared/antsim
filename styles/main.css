@@ -28,16 +28,11 @@ html, body {
   left: 0;
   right: 0;
   padding-top: calc(8px + var(--safe-top));
-  padding-bottom: 8px;
-  padding-left: 12px;
-  padding-right: 12px;
+  padding: 12px;
   pointer-events: none;
-}
-
-#hud .row {
+  color: rgba(255,255,255,0.9);
+  font-size: 14px;
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  color: rgba(255,255,255,0.9);
-  font-size: 14px;
 }

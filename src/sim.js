@@ -130,8 +130,48 @@ function ensurePredator(state) {
   }
 }
 
+function resetPheromones(state) {
+  const p = state.pheromone;
+  const fields = [p.home, p.food, p.danger];
+  for (const f of fields) {
+    if (!f?.values || !f?.values2) continue;
+    f.values.fill(0);
+    f.values2.fill(0);
+  }
+}
+
+function resetGame(state) {
+  // reset nest
+  if (state.nest) {
+    state.nest.hp = state.nest.maxHp ?? 100;
+  }
+
+  // reset ui
+  state.ui.food = 0;
+  state.ui.biomass = 0;
+  state.ui.threat = 0;
+
+  // reset predator
+  if (state.predator) {
+    state.predator.active = false;
+    state.predator.hp = 0;
+    state.predator.spawnTimer = 6;
+  }
+
+  // reset game flags
+  state.game.over = false;
+  state.game.message = "";
+
+  resetPheromones(state);
+}
+
 export function stepSim(state, dt) {
+  // stop sim if game over
+if (state.game?.over) return;
   state.time += dt;
+  // tap to restart when game over
+if (state.game?.over && state.input?.pointerDown)
+  resetGame(state);
 
   const p = state.pheromone;
   if (!p?.imgData || !p.home?.values || !p.food?.values) return;
@@ -212,6 +252,24 @@ export function stepSim(state, dt) {
     if (p.danger?.values) {
       deposit(p.danger.values, gw, gh, p.cellSize, dpr, predator.x, predator.y, predator.emitStrength);
     }
+
+    // NEST DAMAGE if predator reaches nest
+if (nest) {
+  const ndx = predator.x - nest.x;
+  const ndy = predator.y - nest.y;
+  const reachR = (nest.r * 1.1) * dpr;
+
+  if (ndx * ndx + ndy * ndy < reachR * reachR) {
+    const dps = 18; // nest damage per second
+    nest.hp -= dps * dt;
+
+    if (nest.hp <= 0) {
+      nest.hp = 0;
+      state.game.over = true;
+      state.game.message = "Colony Collapsed";
+    }
+  }
+}
 
     // threat rises
     state.ui.threat = Math.min(100, state.ui.threat + state.tuning.threatRise * dt);

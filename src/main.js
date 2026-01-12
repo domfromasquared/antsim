@@ -21,6 +21,7 @@ function initPheromoneGrid() {
   state.pheromone.gw = gw;
   state.pheromone.gh = gh;
   state.pheromone.values = new Float32Array(gw * gh);
+  state.pheromone.values2 = new Float32Array(gw * gh);
   state.pheromone.imgData = new ImageData(gw, gh);
 }
 

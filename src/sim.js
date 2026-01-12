@@ -99,6 +99,26 @@ export function stepSim(state, dt) {
   [p.home.values, p.home.values2] = [p.home.values2, p.home.values];
   [p.food.values, p.food.values2] = [p.food.values2, p.food.values];
 
+  // World refs (define BEFORE emitters)
+const nest = state.nest;
+const foodNodes = state.foodNodes ?? [];
+
+// EMITTERS: bootstrap gradients so ants can actually loop
+if (nest) {
+  deposit(p.home.values, gw, gh, p.cellSize, dpr, nest.x, nest.y, 7.0);
+}
+
+for (const node of foodNodes) {
+  if (node.amount <= 0) continue;
+  const strength = 3.5 * Math.min(1, node.amount / 200);
+  deposit(p.food.values, gw, gh, p.cellSize, dpr, node.x, node.y, strength);
+}
+
+// Optional: touch paints FOOD pheromone to “train” the system
+if (state.input.pointerDown) {
+  deposit(p.food.values, gw, gh, p.cellSize, dpr, state.input.x, state.input.y, 4.0);
+}
+
   // 3) BOOTSTRAP EMITTERS (THIS MAKES LOOPS HAPPEN)
   // Nest constantly emits HOME pheromone
   if (state.nest) {
@@ -121,8 +141,6 @@ export function stepSim(state, dt) {
 
   // 4) ant logic
   const ants = state.ants ?? [];
-  const nest = state.nest;
-  const foodNodes = state.foodNodes ?? [];
 
   for (let ant of ants) {
     // Pickup / dropoff checks (dx/dy in DPR pixels)

@@ -5,9 +5,14 @@ export function createState() {
     view: { w: 0, h: 0, dpr: 1 },
     input: { pointerDown: false, x: 0, y: 0 },
 
-    nest: { x: 0, y: 0, r: 18 },
+    nest: { x: 0, y: 0, r: 18, hp: 100, maxHp: 100 },
     foodNodes: [],
 
+    game: {
+  over: false,
+  message: "RESTART"
+},
+    
     pheromone: {
       gw: 0, gh: 0,
       imgData: null,

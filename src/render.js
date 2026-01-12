@@ -230,7 +230,10 @@ export function render(ctx, state) {
   drawPredator(ctx, state);
 
   // ants above heatmap
-  drawAnts(ctx, state);
+drawAnts(ctx, state);
+
+drawNestHp(ctx, state);
+drawGameOver(ctx, state);
 
   // pointer indicator
   if (state.input?.pointerDown) {

@@ -10,11 +10,10 @@ const state = createState();
 attachInput(canvas, state);
 
 function initPheromoneGrid() {
-  // grid size is based on CSS pixels so it feels consistent across DPR
   const cssW = Math.floor(window.innerWidth);
   const cssH = Math.floor(window.innerHeight);
 
-  const cs = state.pheromone.cellSize; // CSS px per cell
+  const cs = state.pheromone.cellSize;
   const gw = Math.max(8, Math.floor(cssW / cs));
   const gh = Math.max(8, Math.floor(cssH / cs));
 
@@ -42,24 +41,30 @@ function resize() {
   initPheromoneGrid();
 }
 
-function spawnAnts() {
+function spawnAnts(count = 30) {
+  // ensure ants array exists (in case createState() doesn’t set it yet)
+  if (!state.ants) state.ants = [];
+
   const cx = state.view.w * 0.5;
   const cy = state.view.h * 0.5;
 
-  for (let i = 0; i < 30; i++) {
+  state.ants.length = 0; // reset so we don’t double-spawn on reloads
+
+  for (let i = 0; i < count; i++) {
     state.ants.push({
-      x: cx + (Math.random() - 0.5) * 20,
-      y: cy + (Math.random() - 0.5) * 20,
+      x: cx + (Math.random() - 0.5) * 40,
+      y: cy + (Math.random() - 0.5) * 40,
       dir: Math.random() * Math.PI * 2,
       speed: 30 + Math.random() * 20
     });
   }
 }
 
-spawnAnts();
-
 window.addEventListener("resize", resize, { passive: true });
+
+// IMPORTANT: resize first, then spawn
 resize();
+spawnAnts(30);
 
 // Fixed timestep sim
 let last = performance.now();

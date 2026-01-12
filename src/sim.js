@@ -110,7 +110,7 @@ if (nest) {
 
 for (const node of foodNodes) {
   if (node.amount <= 0) continue;
-  const strength = 3.5 * Math.min(1, node.amount / 200);
+  const strength = 7.0 * Math.min(1, node.amount / 200);
   deposit(p.food.values, gw, gh, p.cellSize, dpr, node.x, node.y, strength);
 }
 

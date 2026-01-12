@@ -6,16 +6,16 @@ export function createState() {
     input: { pointerDown: false, x: 0, y: 0 },
 
     pheromone: {
-  gw: 0,
-  gh: 0,
-  values: null,     // front buffer
-  values2: null,    // back buffer (for diffusion)
-  imgData: null,
-  cellSize: 12,
+      gw: 0,
+      gh: 0,
+      values: null,
+      values2: null,
+      imgData: null,
+      cellSize: 12,
+      decayPerSecond: 0.88,
+      diffuseRate: 0.22
+    },
 
-  // tuning
-  decayPerSecond: 0.88, // closer to 1 = slower fade
-  diffuseRate: 0.22     // 0..1, how much spreads each sim tick
-}
+    ants: []
   };
 }

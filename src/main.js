@@ -50,7 +50,7 @@ function spawnAnts(count = 30) {
 
   state.ants.length = 0; // reset so we don’t double-spawn on reloads
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < 30; i++) {
     state.ants.push({
       x: cx + (Math.random() - 0.5) * 40,
       y: cy + (Math.random() - 0.5) * 40,

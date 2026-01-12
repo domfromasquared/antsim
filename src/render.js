@@ -170,6 +170,49 @@ function drawAnts(ctx, state) {
   }
 }
 
+function drawNestHp(ctx, state) {
+  const nest = state.nest;
+  if (!nest) return;
+
+  const hp = nest.hp ?? 0;
+  const maxHp = nest.maxHp ?? 100;
+  const hp01 = Math.max(0, Math.min(1, hp / maxHp));
+
+  const dpr = state.view.dpr;
+  const w = 120 * dpr;
+  const h = 10 * dpr;
+  const x = (state.view.w - w) * 0.5;
+  const y = 14 * dpr;
+
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.fillRect(x, y, w, h);
+
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.fillRect(x, y, w * hp01, h);
+}
+
+function drawGameOver(ctx, state) {
+  if (!state.game?.over) return;
+
+  const dpr = state.view.dpr;
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(0, 0, state.view.w, state.view.h);
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.font = `${22 * dpr}px system-ui`;
+  ctx.fillText(state.game.message || "Game Over", state.view.w * 0.5, state.view.h * 0.45);
+
+  ctx.font = `${14 * dpr}px system-ui`;
+  ctx.fillStyle = "rgba(255,255,255,0.80)";
+  ctx.fillText("Tap to Restart", state.view.w * 0.5, state.view.h * 0.52);
+
+  ctx.restore();
+}
+
 export function render(ctx, state) {
   const { w, h } = state.view;
 

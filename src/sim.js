@@ -24,6 +24,7 @@ function decayField(arr, decay) {
 }
 
 function deposit(field, gw, gh, cellSize, dpr, px, py, amount) {
+  // px/py are in DPR pixels (canvas space). Convert to CSS pixels for grid mapping.
   const cssX = px / dpr;
   const cssY = py / dpr;
   const cx = Math.floor(cssX / cellSize);
@@ -34,6 +35,7 @@ function deposit(field, gw, gh, cellSize, dpr, px, py, amount) {
     if (yy < 0 || yy >= gh) continue;
     for (let xx = cx - r; xx <= cx + r; xx++) {
       if (xx < 0 || xx >= gw) continue;
+
       const dx = xx - cx;
       const dy = yy - cy;
       const d2 = dx * dx + dy * dy;
@@ -76,11 +78,14 @@ export function stepSim(state, dt) {
   state.time += dt;
 
   const p = state.pheromone;
-  if (!p.imgData || !p.home.values || !p.food.values) return;
+  if (!p.imgData || !p.home?.values || !p.food?.values) return;
 
   const gw = p.gw, gh = p.gh;
-  const decay = Math.pow(p.decayPerSecond, dt);
-  const k = p.diffuseRate;
+  const dpr = state.view.dpr;
+
+  // Slightly slower decay helps trails persist long enough to “lock”
+  const decay = Math.pow(p.decayPerSecond ?? 0.92, dt);
+  const k = p.diffuseRate ?? 0.22;
 
   // 1) decay
   decayField(p.home.values, decay);
@@ -94,62 +99,26 @@ export function stepSim(state, dt) {
   [p.home.values, p.home.values2] = [p.home.values2, p.home.values];
   [p.food.values, p.food.values2] = [p.food.values2, p.food.values];
 
-  // 3) optional: touch paints FOOD pheromone for debugging/training
+  // 3) BOOTSTRAP EMITTERS (THIS MAKES LOOPS HAPPEN)
+  // Nest constantly emits HOME pheromone
+  if (state.nest) {
+    deposit(p.home.values, gw, gh, p.cellSize, dpr, state.nest.x, state.nest.y, 7.0);
+  }
+
+  // Food nodes constantly emit FOOD pheromone (scaled by remaining amount)
+  if (state.foodNodes) {
+    for (const node of state.foodNodes) {
+      if (node.amount <= 0) continue;
+      const strength = 3.5 * Math.min(1, node.amount / 200);
+      deposit(p.food.values, gw, gh, p.cellSize, dpr, node.x, node.y, strength);
+    }
+  }
+
+  // Optional: touch paints FOOD pheromone to “train” the system
   if (state.input.pointerDown) {
-    deposit(p.food.values, gw, gh, p.cellSize, state.view.dpr, state.input.x, state.input.y, 3.0);
+    deposit(p.food.values, gw, gh, p.cellSize, dpr, state.input.x, state.input.y, 4.0);
   }
 
   // 4) ant logic
-  const ants = state.ants;
-  const nest = state.nest;
-  const foodNodes = state.foodNodes;
-  const dpr = state.view.dpr;
-
-  for (let ant of ants) {
-    // Pickup / dropoff checks (distance in render pixels)
-    if (!ant.carrying) {
-      for (let node of foodNodes) {
-        if (node.amount <= 0) continue;
-        const dx = node.x - ant.x;
-        const dy = node.y - ant.y;
-        if (dx * dx + dy * dy < 14 * 14 * dpr * dpr) {
-          ant.carrying = true;
-          node.amount -= 1;
-          break;
-        }
-      }
-    } else {
-      const dx = nest.x - ant.x;
-      const dy = nest.y - ant.y;
-      if (dx * dx + dy * dy < (nest.r * dpr) * (nest.r * dpr)) {
-        ant.carrying = false;
-        state.ui.food += 1;
-      }
-    }
-
-    // Choose which field to follow
-    const followField = ant.carrying ? p.home.values : p.food.values;
-    const depositField = ant.carrying ? p.food.values : p.home.values;
-
-    const sampled = sampleBestDir(followField, gw, gh, p.cellSize, dpr, ant.x, ant.y);
-
-    if (sampled.bestVal > 0.02) {
-      ant.dir = sampled.dir;
-    } else {
-      ant.dir += (Math.random() - 0.5) * 0.35;
-    }
-
-    // Move
-    ant.x += Math.cos(ant.dir) * ant.speed * dt * dpr;
-    ant.y += Math.sin(ant.dir) * ant.speed * dt * dpr;
-
-    // Bounds bounce
-    if (ant.x < 0) { ant.x = 0; ant.dir = Math.PI - ant.dir; }
-    if (ant.x > state.view.w) { ant.x = state.view.w; ant.dir = Math.PI - ant.dir; }
-    if (ant.y < 0) { ant.y = 0; ant.dir = -ant.dir; }
-    if (ant.y > state.view.h) { ant.y = state.view.h; ant.dir = -ant.dir; }
-
-    // Leave trail
-    deposit(depositField, gw, gh, p.cellSize, dpr, ant.x, ant.y, 0.35);
-  }
-}
+  const ants = state.ants ?? [];
+  cons

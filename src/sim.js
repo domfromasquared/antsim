@@ -179,7 +179,7 @@ if (state.input.pointerDown) {
     const sampled = sampleBestDir(followField, gw, gh, p.cellSize, dpr, ant.x, ant.y);
 
     // Lower threshold so they “lock” sooner
-    if (sampled.bestVal > 0.006) {
+    if (sampled.bestVal > 0.02) {
       ant.dir = sampled.dir;
     } else {
       ant.dir += (Math.random() - 0.5) * 0.35;

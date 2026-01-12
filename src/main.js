@@ -42,6 +42,22 @@ function resize() {
   initPheromoneGrid();
 }
 
+function spawnAnts() {
+  const cx = state.view.w * 0.5;
+  const cy = state.view.h * 0.5;
+
+  for (let i = 0; i < 30; i++) {
+    state.ants.push({
+      x: cx + (Math.random() - 0.5) * 20,
+      y: cy + (Math.random() - 0.5) * 20,
+      dir: Math.random() * Math.PI * 2,
+      speed: 30 + Math.random() * 20
+    });
+  }
+}
+
+spawnAnts();
+
 window.addEventListener("resize", resize, { passive: true });
 resize();
 

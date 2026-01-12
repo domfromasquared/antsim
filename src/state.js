@@ -27,6 +27,7 @@ export function createState() {
       x: 0, y: 0,
       vx: 0, vy: 0,
       hp: 0,
+      maxHp: 80,
       spawnTimer: 6,      // seconds until first spawn
       emitStrength: 10.0, // danger pheromone strength
       speed: 55

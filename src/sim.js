@@ -76,7 +76,6 @@ function sampleBestDir(field, gw, gh, cellSize, dpr, x, y) {
   return { bestVal, dir: Math.atan2(bestDy, bestDx) };
 }
 
-// Move away from danger by choosing the lowest neighbor
 function sampleWorstDir(field, gw, gh, cellSize, dpr, x, y) {
   const cssX = x / dpr;
   const cssY = y / dpr;
@@ -104,30 +103,27 @@ function sampleWorstDir(field, gw, gh, cellSize, dpr, x, y) {
   return { worstVal, dir: Math.atan2(worstDy, worstDx) };
 }
 
-function ensurePredator(state) {
-  if (!state.predator) {
-    state.predator = {
-      active: false,
-      x: 0, y: 0,
-      hp: 0,
-      maxHp: 80,
-      spawnTimer: 6,
-      emitStrength: 10,
-      speed: 55
-    };
-  } else {
-    if (typeof state.predator.maxHp !== "number") state.predator.maxHp = 80;
-    if (typeof state.predator.emitStrength !== "number") state.predator.emitStrength = 10;
-    if (typeof state.predator.speed !== "number") state.predator.speed = 55;
-    if (typeof state.predator.spawnTimer !== "number") state.predator.spawnTimer = 6;
+function nearestPredator(predators, x, y) {
+  let best = null;
+  let bestD2 = Infinity;
+  for (const pr of predators) {
+    if (!pr.active) continue;
+    const dx = pr.x - x;
+    const dy = pr.y - y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      best = pr;
+    }
   }
-  if (!state.tuning) {
-    state.tuning = {
-      soldierFraction: 0.22,
-      threatRise: 25,
-      threatFall: 14
-    };
-  }
+  return best;
+}
+
+function ensureWaveSystem(state) {
+  state.wave ??= { n: 0, inProgress: false, nextIn: 6, predatorsAlive: 0, bannerTimer: 0 };
+  state.predators ??= [];
+  state.tuning ??= { soldierFraction: 0.22, threatRise: 25, threatFall: 14 };
+  state.game ??= { over: false, message: "" };
 }
 
 function resetPheromones(state) {
@@ -141,31 +137,65 @@ function resetPheromones(state) {
 }
 
 function resetGame(state) {
-  // reset nest
-  if (state.nest) {
-    state.nest.hp = state.nest.maxHp ?? 100;
-  }
+  if (state.nest) state.nest.hp = state.nest.maxHp ?? 100;
 
-  // reset ui
   state.ui.food = 0;
   state.ui.biomass = 0;
   state.ui.threat = 0;
 
-  // reset predator
+  // reset waves/predators
+  state.predators = [];
+  state.wave.n = 0;
+  state.wave.inProgress = false;
+  state.wave.nextIn = 6;
+  state.wave.predatorsAlive = 0;
+  state.wave.bannerTimer = 0;
+
+  // back-compat predator cleared too
   if (state.predator) {
     state.predator.active = false;
     state.predator.hp = 0;
     state.predator.spawnTimer = 6;
   }
 
-  // reset game flags
   state.game.over = false;
   state.game.message = "";
 
   resetPheromones(state);
 }
 
+function waveStats(waveN) {
+  // waveN starts at 1
+  return {
+    hp: 70 + waveN * 14,
+    speed: 48 + waveN * 2.2,
+    emitStrength: 9 + waveN * 0.7,
+    count: 1 + Math.floor((waveN - 1) / 3) // +1 every 3 waves
+  };
+}
+
+function spawnPredatorAtEdge(state, stats) {
+  const pr = {
+    active: true,
+    x: 0, y: 0,
+    hp: stats.hp,
+    maxHp: stats.hp,
+    emitStrength: stats.emitStrength,
+    speed: stats.speed
+  };
+
+  const edge = Math.floor(Math.random() * 4);
+  if (edge === 0) { pr.x = 0; pr.y = Math.random() * state.view.h; }
+  if (edge === 1) { pr.x = state.view.w; pr.y = Math.random() * state.view.h; }
+  if (edge === 2) { pr.x = Math.random() * state.view.w; pr.y = 0; }
+  if (edge === 3) { pr.x = Math.random() * state.view.w; pr.y = state.view.h; }
+
+  state.predators.push(pr);
+}
+
 export function stepSim(state, dt) {
+  ensureWaveSystem(state);
+
   // tap to restart when game over
   if (state.game?.over) {
     if (state.input?.pointerDown) resetGame(state);
@@ -175,9 +205,7 @@ export function stepSim(state, dt) {
   state.time += dt;
 
   const p = state.pheromone;
-  if (!p?.imgData || !p.home?.values || !p.food?.values) return;
-
-  ensurePredator(state);
+  if (!p?.imgData || !p.home?.values || !p.food?.values || !p.danger?.values) return;
 
   const gw = p.gw, gh = p.gh;
   const dpr = state.view.dpr;
@@ -188,21 +216,17 @@ export function stepSim(state, dt) {
   // 1) decay
   decayField(p.home.values, decay);
   decayField(p.food.values, decay);
-  if (p.danger?.values) decayField(p.danger.values, decay);
+  decayField(p.danger.values, decay);
 
   // 2) diffuse (ping-pong)
   diffuseField(p.home.values, p.home.values2, gw, gh, k);
   diffuseField(p.food.values, p.food.values2, gw, gh, k);
-  if (p.danger?.values && p.danger?.values2) {
-    diffuseField(p.danger.values, p.danger.values2, gw, gh, k);
-  }
+  diffuseField(p.danger.values, p.danger.values2, gw, gh, k);
 
   // swap
   [p.home.values, p.home.values2] = [p.home.values2, p.home.values];
   [p.food.values, p.food.values2] = [p.food.values2, p.food.values];
-  if (p.danger?.values && p.danger?.values2) {
-    [p.danger.values, p.danger.values2] = [p.danger.values2, p.danger.values];
-  }
+  [p.danger.values, p.danger.values2] = [p.danger.values2, p.danger.values];
 
   // World refs
   const nest = state.nest;
@@ -224,58 +248,75 @@ export function stepSim(state, dt) {
     deposit(p.food.values, gw, gh, p.cellSize, dpr, state.input.x, state.input.y, 4.0);
   }
 
-  // --- PREDATOR SYSTEM ---
-  const predator = state.predator;
-  predator.spawnTimer -= dt;
+  // ----- WAVE MANAGER -----
+  const wave = state.wave;
 
-  if (!predator.active && predator.spawnTimer <= 0) {
-    predator.active = true;
-    predator.maxHp = predator.maxHp ?? 80;
-    predator.hp = predator.maxHp;
+  if (!wave.inProgress) {
+    wave.nextIn -= dt;
+    if (wave.nextIn <= 0) {
+      wave.n += 1;
+      wave.inProgress = true;
+      wave.bannerTimer = 2.0;
 
-    const edge = Math.floor(Math.random() * 4);
-    if (edge === 0) { predator.x = 0; predator.y = Math.random() * state.view.h; }
-    if (edge === 1) { predator.x = state.view.w; predator.y = Math.random() * state.view.h; }
-    if (edge === 2) { predator.x = Math.random() * state.view.w; predator.y = 0; }
-    if (edge === 3) { predator.x = Math.random() * state.view.w; predator.y = state.view.h; }
-  }
+      const stats = waveStats(wave.n);
+      for (let i = 0; i < stats.count; i++) spawnPredatorAtEdge(state, stats);
 
-  if (predator.active && nest) {
-    // move toward nest
-    const dx = nest.x - predator.x;
-    const dy = nest.y - predator.y;
-    const len = Math.hypot(dx, dy) || 1;
-
-    predator.x += (dx / len) * predator.speed * dt * dpr;
-    predator.y += (dy / len) * predator.speed * dt * dpr;
-
-    // emit danger pheromone
-    if (p.danger?.values) {
-      deposit(p.danger.values, gw, gh, p.cellSize, dpr, predator.x, predator.y, predator.emitStrength);
+      wave.predatorsAlive = stats.count;
     }
+  } else {
+    let alive = 0;
+    for (const pr of state.predators) if (pr.active) alive++;
+    wave.predatorsAlive = alive;
 
-    // NEST DAMAGE if predator reaches nest
-if (nest) {
-  const ndx = predator.x - nest.x;
-  const ndy = predator.y - nest.y;
-  const reachR = (nest.r * 1.1) * dpr;
-
-  if (ndx * ndx + ndy * ndy < reachR * reachR) {
-    const dps = 18; // nest damage per second
-    nest.hp -= dps * dt;
-
-    if (nest.hp <= 0) {
-      nest.hp = 0;
-      state.game.over = true;
-      state.game.message = "Colony Collapsed";
+    if (alive === 0) {
+      wave.inProgress = false;
+      wave.nextIn = 7 + wave.n * 0.6;
     }
   }
-}
 
-    // threat rises
+  if (wave.bannerTimer > 0) wave.bannerTimer -= dt;
+
+  // ----- PREDATORS UPDATE -----
+  let anyPredatorActive = false;
+
+  for (const pr of state.predators) {
+    if (!pr.active) continue;
+    anyPredatorActive = true;
+
+    if (nest) {
+      // move toward nest
+      const dx = nest.x - pr.x;
+      const dy = nest.y - pr.y;
+      const len = Math.hypot(dx, dy) || 1;
+
+      pr.x += (dx / len) * pr.speed * dt * dpr;
+      pr.y += (dy / len) * pr.speed * dt * dpr;
+
+      // emit danger pheromone
+      deposit(p.danger.values, gw, gh, p.cellSize, dpr, pr.x, pr.y, pr.emitStrength);
+
+      // nest damage when reached
+      const ndx = pr.x - nest.x;
+      const ndy = pr.y - nest.y;
+      const reachR = (nest.r * 1.1) * dpr;
+
+      if (ndx * ndx + ndy * ndy < reachR * reachR) {
+        const dps = 18 + wave.n * 1.5;
+        nest.hp -= dps * dt;
+
+        if (nest.hp <= 0) {
+          nest.hp = 0;
+          state.game.over = true;
+          state.game.message = "Colony Collapsed";
+        }
+      }
+    }
+  }
+
+  // threat meter rises/falls
+  if (anyPredatorActive) {
     state.ui.threat = Math.min(100, state.ui.threat + state.tuning.threatRise * dt);
   } else {
-    // threat falls
     state.ui.threat = Math.max(0, state.ui.threat - state.tuning.threatFall * dt);
   }
 
@@ -286,8 +327,8 @@ if (nest) {
 
   let currentSoldiers = 0;
   for (const a of ants) {
-    if ((a.role || "worker") === "soldier") currentSoldiers++;
     if (!a.role) a.role = "worker";
+    if (a.role === "soldier") currentSoldiers++;
   }
 
   if (currentSoldiers < desiredSoldiers) {
@@ -313,10 +354,10 @@ if (nest) {
   for (let ant of ants) {
     const role = ant.role || "worker";
 
-    // WORKER: pickup/dropoff loop
+    // Worker pickup/dropoff
     if (role === "worker") {
       if (!ant.carrying) {
-        for (let node of foodNodes) {
+        for (const node of foodNodes) {
           if (node.amount <= 0) continue;
 
           const dx = node.x - ant.x;
@@ -341,39 +382,35 @@ if (nest) {
       }
     }
 
-    // DANGER REACTION
-    let dangerHere = 0;
-    if (p.danger?.values) {
-      dangerHere = sampleBestDir(p.danger.values, gw, gh, p.cellSize, dpr, ant.x, ant.y).bestVal;
-    }
+    // Danger sensing
+    const dangerHere = sampleBestDir(p.danger.values, gw, gh, p.cellSize, dpr, ant.x, ant.y).bestVal;
 
-    if (role === "worker" && dangerHere > 0.02 && p.danger?.values) {
+    if (role === "worker" && dangerHere > 0.02) {
       // flee downhill away from danger
       const flee = sampleWorstDir(p.danger.values, gw, gh, p.cellSize, dpr, ant.x, ant.y);
       ant.dir = flee.dir + (Math.random() - 0.5) * 0.2;
     } else if (role === "soldier") {
-      if (predator.active) {
-        const dx = predator.x - ant.x;
-        const dy = predator.y - ant.y;
+      const target = nearestPredator(state.predators, ant.x, ant.y);
+
+      if (target) {
+        const dx = target.x - ant.x;
+        const dy = target.y - ant.y;
         ant.dir = Math.atan2(dy, dx);
 
-        // attack if close
         const attackR = 16 * dpr;
         if (dx * dx + dy * dy < attackR * attackR) {
-          predator.hp -= 22 * dt; // DPS
-          if (predator.hp <= 0) {
-            predator.active = false;
-            predator.spawnTimer = 10 + Math.random() * 8;
+          target.hp -= 22 * dt;
+          if (target.hp <= 0) {
+            target.hp = 0;
+            target.active = false;
             state.ui.biomass = (state.ui.biomass ?? 0) + 1;
           }
         }
 
-        // soldiers “thicken” danger mark near combat
-        if (p.danger?.values) {
-          deposit(p.danger.values, gw, gh, p.cellSize, dpr, ant.x, ant.y, 0.35);
-        }
+        // thicken danger near combat for clearer flee behavior
+        deposit(p.danger.values, gw, gh, p.cellSize, dpr, ant.x, ant.y, 0.35);
       } else if (nest) {
-        // rally near nest when idle
+        // idle guard near nest
         const dx = nest.x - ant.x;
         const dy = nest.y - ant.y;
         ant.dir = Math.atan2(dy, dx);
@@ -387,17 +424,14 @@ if (nest) {
 
       const sampled = sampleBestDir(followField, gw, gh, p.cellSize, dpr, ant.x, ant.y);
 
-      if (sampled.bestVal > 0.006) {
-        ant.dir = sampled.dir;
-      } else {
-        ant.dir += (Math.random() - 0.5) * 0.35;
-      }
+      if (sampled.bestVal > 0.006) ant.dir = sampled.dir;
+      else ant.dir += (Math.random() - 0.5) * 0.35;
 
       // leave trail
       deposit(depositField, gw, gh, p.cellSize, dpr, ant.x, ant.y, 0.45);
     }
 
-    // MOVE
+    // move
     const speedMult = (role === "soldier") ? 1.15 : 1.0;
     ant.x += Math.cos(ant.dir) * (ant.speed || 60) * speedMult * dt * dpr;
     ant.y += Math.sin(ant.dir) * (ant.speed || 60) * speedMult * dt * dpr;

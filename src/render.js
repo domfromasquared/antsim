@@ -1,7 +1,5 @@
-// module-scope (persists between frames)
 let _maxSmooth = 1;
 
-// Simple singleton temp canvas (avoid reallocs every frame)
 let _tmpCanvas = null;
 let _tmpCtx = null;
 
@@ -22,8 +20,6 @@ function drawHeatmap(ctx, state) {
   const gw = p.gw, gh = p.gh;
   if (!gw || !gh) return;
 
-  const data = p.imgData.data;
-
   const hasHomeFood = !!(p.home?.values && p.food?.values);
   const hasDanger = !!(p.danger?.values);
   if (!hasHomeFood) return;
@@ -32,11 +28,11 @@ function drawHeatmap(ctx, state) {
   const food = p.food.values;
   const danger = hasDanger ? p.danger.values : null;
 
-  // smoothed max for stable normalization
+  const data = p.imgData.data;
+
   let maxNow = 0.0001;
   for (let i = 0; i < home.length; i++) {
-    const h = home[i];
-    const f = food[i];
+    const h = home[i], f = food[i];
     if (h > maxNow) maxNow = h;
     if (f > maxNow) maxNow = f;
     if (danger && danger[i] > maxNow) maxNow = danger[i];
@@ -56,7 +52,6 @@ function drawHeatmap(ctx, state) {
     const fBoost = Math.min(1, f * 2.4);
     const hBoost = Math.min(1, h * 1.4);
 
-    // danger=red, food=green, home=blue
     data[idx + 0] = Math.floor(dBoost * 255);
     data[idx + 1] = Math.floor(fBoost * 255);
     data[idx + 2] = Math.floor(hBoost * 255);
@@ -65,7 +60,6 @@ function drawHeatmap(ctx, state) {
     data[idx + 3] = Math.floor(a * 230);
   }
 
-  // push ImageData to temp canvas then scale to screen
   const tctx = getTmpCtx(gw, gh);
   tctx.putImageData(p.imgData, 0, 0);
 
@@ -80,7 +74,6 @@ function drawHeatmap(ctx, state) {
 }
 
 function drawNestAndFood(ctx, state) {
-  // nest
   if (state.nest && typeof state.nest.x === "number") {
     const r = (state.nest.r ?? 18) * state.view.dpr;
     ctx.fillStyle = "rgba(255,255,255,0.18)";
@@ -89,7 +82,6 @@ function drawNestAndFood(ctx, state) {
     ctx.fill();
   }
 
-  // food nodes
   if (Array.isArray(state.foodNodes)) {
     for (const node of state.foodNodes) {
       if (!node) continue;
@@ -105,41 +97,27 @@ function drawNestAndFood(ctx, state) {
 }
 
 function drawPredators(ctx, state) {
-  // Prefer multi-predators
   const predators = Array.isArray(state.predators) ? state.predators : [];
-  if (predators.length) {
-    for (const pr of predators) {
-      if (!pr.active) continue;
+  for (const pr of predators) {
+    if (!pr.active) continue;
 
-      const r = 10 * state.view.dpr;
-      ctx.fillStyle = "rgba(255,80,80,0.9)";
-      ctx.beginPath();
-      ctx.arc(pr.x, pr.y, r, 0, Math.PI * 2);
-      ctx.fill();
+    const r = 10 * state.view.dpr;
+    ctx.fillStyle = "rgba(255,80,80,0.9)";
+    ctx.beginPath();
+    ctx.arc(pr.x, pr.y, r, 0, Math.PI * 2);
+    ctx.fill();
 
-      const hp01 = Math.max(0, Math.min(1, pr.hp / (pr.maxHp || 80)));
-      const w = 34 * state.view.dpr;
-      const h = 5 * state.view.dpr;
-      const x = pr.x - w * 0.5;
-      const y = pr.y - r - 10 * state.view.dpr;
+    const hp01 = Math.max(0, Math.min(1, pr.hp / (pr.maxHp || 80)));
+    const w = 34 * state.view.dpr;
+    const h = 5 * state.view.dpr;
+    const x = pr.x - w * 0.5;
+    const y = pr.y - r - 10 * state.view.dpr;
 
-      ctx.fillStyle = "rgba(255,255,255,0.25)";
-      ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = "rgba(255,80,80,0.95)";
-      ctx.fillRect(x, y, w * hp01, h);
-    }
-    return;
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = "rgba(255,80,80,0.95)";
+    ctx.fillRect(x, y, w * hp01, h);
   }
-
-  // Back-compat single predator
-  const predator = state.predator;
-  if (!predator || !predator.active) return;
-
-  const r = 10 * state.view.dpr;
-  ctx.fillStyle = "rgba(255,80,80,0.9)";
-  ctx.beginPath();
-  ctx.arc(predator.x, predator.y, r, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 function drawAnts(ctx, state) {
@@ -205,6 +183,70 @@ function drawWaveUi(ctx, state) {
   ctx.restore();
 }
 
+function upgradeCost(key, level) {
+  if (key === "brood") return Math.floor(3 + level * 3 + level * level * 0.5);
+  if (key === "dps") return Math.floor(4 + level * 4 + level * level * 0.6);
+  if (key === "nest") return Math.floor(5 + level * 5 + level * level * 0.7);
+  return 9999;
+}
+
+function drawUpgradeChips(ctx, state) {
+  const dpr = state.view.dpr;
+  const pad = 10 * dpr;
+  const chipW = 118 * dpr;
+  const chipH = 36 * dpr;
+  const gap = 8 * dpr;
+
+  const x = state.view.w - pad - chipW;
+  let y = pad;
+
+  // show resources
+  ctx.save();
+  ctx.textAlign = "right";
+  ctx.textBaseline = "top";
+  ctx.font = `${13 * dpr}px system-ui`;
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.fillText(`BIOMASS ${state.ui.biomass ?? 0}`, state.view.w - pad, y);
+  y += 18 * dpr;
+  ctx.restore();
+
+  const upgrades = state.upgrades ?? { brood: 0, dps: 0, nest: 0 };
+
+  const chips = [
+    { key: "brood", label: "BROOD", lvl: upgrades.brood ?? 0 },
+    { key: "dps", label: "DPS", lvl: upgrades.dps ?? 0 },
+    { key: "nest", label: "NEST", lvl: upgrades.nest ?? 0 }
+  ];
+
+  state.uiHit ??= {};
+  for (const c of chips) {
+    const cost = upgradeCost(c.key, c.lvl);
+
+    // hitbox
+    state.uiHit[c.key] = { x, y, w: chipW, h: chipH };
+
+    // chip bg
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    ctx.fillRect(x, y, chipW, chipH);
+
+    // label
+    ctx.fillStyle = "rgba(255,255,255,0.90)";
+    ctx.font = `${12 * dpr}px system-ui`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText(`${c.label} L${c.lvl + 1}`, x + 10 * dpr, y + 7 * dpr);
+
+    // cost
+    const canBuy = (state.ui.biomass ?? 0) >= cost;
+    ctx.fillStyle = canBuy ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.35)";
+    ctx.font = `${11 * dpr}px system-ui`;
+    ctx.textAlign = "left";
+    ctx.fillText(`COST ${cost}`, x + 10 * dpr, y + 20 * dpr);
+
+    y += chipH + gap;
+  }
+}
+
 function drawGameOver(ctx, state) {
   if (!state.game?.over) return;
 
@@ -230,25 +272,18 @@ function drawGameOver(ctx, state) {
 export function render(ctx, state) {
   const { w, h } = state.view;
 
-  // background
   ctx.fillStyle = "#0b0d10";
   ctx.fillRect(0, 0, w, h);
 
-  // heatmap first
   drawHeatmap(ctx, state);
-
-  // landmarks
   drawNestAndFood(ctx, state);
-
-  // predators
   drawPredators(ctx, state);
-
-  // ants above heatmap
   drawAnts(ctx, state);
 
   // UI
   drawNestHp(ctx, state);
   drawWaveUi(ctx, state);
+  drawUpgradeChips(ctx, state);
   drawGameOver(ctx, state);
 
   // pointer indicator

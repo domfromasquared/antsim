@@ -8,58 +8,6 @@ export function stepSim(state, dt) {
   const front = p.values;
   const back = p.values2;
 
-  // --- ANT MOVEMENT ---
-const ants = state.ants;
-if (ants && ants.length) {
-  const vals = p.values;
-  const gw = p.gw, gh = p.gh;
-  const cs = p.cellSize;
-
-  for (let ant of ants) {
-    // Convert ant pos -> grid cell
-    const cssX = ant.x / state.view.dpr;
-    const cssY = ant.y / state.view.dpr;
-    const cx = Math.floor(cssX / cs);
-    const cy = Math.floor(cssY / cs);
-
-    let bestDx = 0;
-    let bestDy = 0;
-    let bestVal = 0;
-
-    // Sample 8 neighbors
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const x = cx + dx;
-        const y = cy + dy;
-        if (x < 0 || y < 0 || x >= gw || y >= gh) continue;
-
-        const v = vals[y * gw + x];
-        if (v > bestVal) {
-          bestVal = v;
-          bestDx = dx;
-          bestDy = dy;
-        }
-      }
-    }
-
-    if (bestVal > 0.01) {
-      // Follow pheromone
-      ant.dir = Math.atan2(bestDy, bestDx);
-    } else {
-      // Random wander
-      ant.dir += (Math.random() - 0.5) * 0.3;
-    }
-
-    ant.x += Math.cos(ant.dir) * ant.speed * dt;
-    ant.y += Math.sin(ant.dir) * ant.speed * dt;
-
-    // Screen bounds bounce
-    if (ant.x < 0 || ant.x > state.view.w) ant.dir = Math.PI - ant.dir;
-    if (ant.y < 0 || ant.y > state.view.h) ant.dir = -ant.dir;
-  }
-}
-
   // 1) Decay
   const decay = Math.pow(p.decayPerSecond, dt);
   for (let i = 0; i < front.length; i++) front[i] *= decay;
@@ -117,4 +65,56 @@ if (ants && ants.length) {
       }
     }
   }
+
+  // --- ANT MOVEMENT ---
+const ants = state.ants;
+if (ants && ants.length) {
+  const vals = p.values;
+  const gw = p.gw, gh = p.gh;
+  const cs = p.cellSize;
+
+  for (let ant of ants) {
+    // Convert ant pos -> grid cell
+    const cssX = ant.x / state.view.dpr;
+    const cssY = ant.y / state.view.dpr;
+    const cx = Math.floor(cssX / cs);
+    const cy = Math.floor(cssY / cs);
+
+    let bestDx = 0;
+    let bestDy = 0;
+    let bestVal = 0;
+
+    // Sample 8 neighbors
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const x = cx + dx;
+        const y = cy + dy;
+        if (x < 0 || y < 0 || x >= gw || y >= gh) continue;
+
+        const v = vals[y * gw + x];
+        if (v > bestVal) {
+          bestVal = v;
+          bestDx = dx;
+          bestDy = dy;
+        }
+      }
+    }
+
+    if (bestVal > 0.01) {
+      // Follow pheromone
+      ant.dir = Math.atan2(bestDy, bestDx);
+    } else {
+      // Random wander
+      ant.dir += (Math.random() - 0.5) * 0.3;
+    }
+
+    ant.x += Math.cos(ant.dir) * ant.speed * dt;
+    ant.y += Math.sin(ant.dir) * ant.speed * dt;
+
+    // Screen bounds bounce
+    if (ant.x < 0 || ant.x > state.view.w) ant.dir = Math.PI - ant.dir;
+    if (ant.y < 0 || ant.y > state.view.h) ant.dir = -ant.dir;
+  }
+}
 }

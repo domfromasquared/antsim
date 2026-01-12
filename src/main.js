@@ -18,10 +18,16 @@ function initPheromoneGrid() {
   const gh = Math.max(8, Math.floor(cssH / cs));
 
   state.pheromone.gw = gw;
-  state.pheromone.gh = gh;
-  state.pheromone.values = new Float32Array(gw * gh);
-  state.pheromone.values2 = new Float32Array(gw * gh);
-  state.pheromone.imgData = new ImageData(gw, gh);
+state.pheromone.gh = gh;
+
+state.pheromone.home.values = new Float32Array(gw * gh);
+state.pheromone.home.values2 = new Float32Array(gw * gh);
+
+state.pheromone.food.values = new Float32Array(gw * gh);
+state.pheromone.food.values2 = new Float32Array(gw * gh);
+
+state.pheromone.imgData = new ImageData(gw, gh);
+
 }
 
 function resize() {
@@ -41,6 +47,26 @@ function resize() {
   initPheromoneGrid();
 }
 
+function initWorld() {
+  // Nest in center
+  state.nest.x = state.view.w * 0.5;
+  state.nest.y = state.view.h * 0.55; // slightly lower looks good in portrait
+
+  // Food nodes (in-screen, away from nest)
+  state.foodNodes.length = 0;
+
+  for (let i = 0; i < 4; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.min(state.view.w, state.view.h) * (0.25 + Math.random() * 0.25);
+
+    state.foodNodes.push({
+      x: state.nest.x + Math.cos(angle) * dist,
+      y: state.nest.y + Math.sin(angle) * dist,
+      amount: 200
+    });
+  }
+}
+
 function spawnAnts(count = 30) {
   // ensure ants array exists (in case createState() doesn’t set it yet)
   if (!state.ants) state.ants = [];
@@ -52,10 +78,11 @@ function spawnAnts(count = 30) {
 
   for (let i = 0; i < 30; i++) {
     state.ants.push({
-      x: cx + (Math.random() - 0.5) * 40,
-      y: cy + (Math.random() - 0.5) * 40,
-      dir: Math.random() * Math.PI * 2,
-      speed: 30 + Math.random() * 20
+  x: cx + (Math.random() - 0.5) * 40,
+  y: cy + (Math.random() - 0.5) * 40,
+  dir: Math.random() * Math.PI * 2,
+  speed: 30 + Math.random() * 20,
+  carrying: false
     });
   }
 }

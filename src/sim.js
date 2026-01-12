@@ -166,12 +166,13 @@ function resetGame(state) {
 }
 
 export function stepSim(state, dt) {
-  // stop sim if game over
-if (state.game?.over) return;
-  state.time += dt;
   // tap to restart when game over
-if (state.game?.over && state.input?.pointerDown)
-  resetGame(state);
+  if (state.game?.over) {
+    if (state.input?.pointerDown) resetGame(state);
+    return;
+  }
+
+  state.time += dt;
 
   const p = state.pheromone;
   if (!p?.imgData || !p.home?.values || !p.food?.values) return;

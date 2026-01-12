@@ -24,24 +24,28 @@ function drawHeatmap(ctx, state) {
 
   const data = p.imgData.data;
 
-  const hasTwoFields = !!(p.home?.values && p.food?.values);
-  const hasSingleField = !!(p.values);
+  const hasHomeFood = !!(p.home?.values && p.food?.values);
+  const hasDanger = !!(p.danger?.values);
+  const hasSingle = !!(p.values);
 
-  if (!hasTwoFields && !hasSingleField) return;
+  if (!hasHomeFood && !hasSingle) return;
 
   // pick fields
-  const home = hasTwoFields ? p.home.values : null;
-  const food = hasTwoFields ? p.food.values : null;
-  const vals = hasSingleField ? p.values : null;
+  const home = hasHomeFood ? p.home.values : null;
+  const food = hasHomeFood ? p.food.values : null;
+  const danger = hasDanger ? p.danger.values : null;
+  const vals = hasSingle ? p.values : null;
 
   // smoothed max for stable normalization
   let maxNow = 0.0001;
-  if (hasTwoFields) {
+
+  if (hasHomeFood) {
     for (let i = 0; i < home.length; i++) {
       const h = home[i];
       const f = food[i];
       if (h > maxNow) maxNow = h;
       if (f > maxNow) maxNow = f;
+      if (danger && danger[i] > maxNow) maxNow = danger[i];
     }
   } else {
     for (let i = 0; i < vals.length; i++) {
@@ -54,22 +58,26 @@ function drawHeatmap(ctx, state) {
   const max = Math.max(0.0001, _maxSmooth);
 
   // write pixels
-  if (hasTwoFields) {
+  if (hasHomeFood) {
     for (let i = 0; i < home.length; i++) {
-      const h = Math.min(1, home[i] / max); // 0..1
-      const f = Math.min(1, food[i] / max); // 0..1
+      const h = Math.min(1, home[i] / max);     // 0..1
+      const f = Math.min(1, food[i] / max);     // 0..1
+      const d = danger ? Math.min(1, danger[i] / max) : 0;
 
       const idx = i * 4;
 
-      // low red base, food=green, home=blue
-      data[idx + 0] = 40;
-      const fBoost = Math.min(1, f * 2.2);
-      const hBoost = Math.min(1, h * 1.2);
+      // Boost so channels are easy to see
+      const dBoost = Math.min(1, d * 2.2);
+      const fBoost = Math.min(1, f * 2.4);
+      const hBoost = Math.min(1, h * 1.4);
 
-      data[idx + 1] = Math.floor(fBoost * 255); // FOOD stronger green
-      data[idx + 2] = Math.floor(hBoost * 255); // HOME slightly boosted too
+      // danger=red, food=green, home=blue
+      data[idx + 0] = Math.floor(dBoost * 255);
+      data[idx + 1] = Math.floor(fBoost * 255);
+      data[idx + 2] = Math.floor(hBoost * 255);
 
-      data[idx + 3] = Math.floor(Math.min(1, (h + f) * 0.8) * 200);
+      const a = Math.min(1, dBoost * 1.0 + fBoost * 0.8 + hBoost * 0.6);
+      data[idx + 3] = Math.floor(a * 230);
     }
   } else {
     for (let i = 0; i < vals.length; i++) {
@@ -123,12 +131,38 @@ function drawNestAndFood(ctx, state) {
   }
 }
 
+function drawPredator(ctx, state) {
+  const predator = state.predator;
+  if (!predator || !predator.active) return;
+
+  const r = 10 * state.view.dpr;
+  ctx.fillStyle = "rgba(255,80,80,0.9)";
+  ctx.beginPath();
+  ctx.arc(predator.x, predator.y, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // simple hp bar
+  const hp01 = Math.max(0, Math.min(1, predator.hp / (predator.maxHp || 80)));
+  const w = 34 * state.view.dpr;
+  const h = 5 * state.view.dpr;
+  const x = predator.x - w * 0.5;
+  const y = predator.y - r - 10 * state.view.dpr;
+
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(255,80,80,0.95)";
+  ctx.fillRect(x, y, w * hp01, h);
+}
+
 function drawAnts(ctx, state) {
   if (!Array.isArray(state.ants)) return;
 
   for (const ant of state.ants) {
+    const role = ant.role || "worker";
     const carrying = !!ant.carrying;
-    ctx.fillStyle = carrying ? "#ffffff" : "#ffd966";
+
+    if (role === "soldier") ctx.fillStyle = "#ffb3b3";
+    else ctx.fillStyle = carrying ? "#ffffff" : "#ffd966";
 
     ctx.beginPath();
     ctx.arc(ant.x, ant.y, 2.2 * state.view.dpr, 0, Math.PI * 2);
@@ -148,6 +182,9 @@ export function render(ctx, state) {
 
   // landmarks
   drawNestAndFood(ctx, state);
+
+  // predator
+  drawPredator(ctx, state);
 
   // ants above heatmap
   drawAnts(ctx, state);

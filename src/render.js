@@ -43,6 +43,15 @@ export function render(ctx, state) {
       data[idx + 3] = Math.floor(a * 180);
     }
 
+    
+    // draw ants
+    ctx.fillStyle = "#ffd966";
+    for (let ant of state.ants) {
+    ctx.beginPath();
+    ctx.arc(ant.x, ant.y, 2.2 * state.view.dpr, 0, Math.PI * 2);
+    ctx.fill();
+}
+
     // push ImageData to an offscreen canvas, then scale to screen
     const tmp = getTmpCanvas(gw, gh);
     const tctx = tmp.getContext("2d");

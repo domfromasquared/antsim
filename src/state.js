@@ -9,12 +9,22 @@ export function createState() {
     foodNodes: [],
 
     game: {
-  over: false,
-  message: "RESTART"
-},
-    
+      over: false,
+      message: ""
+    },
+
+    // NEW: wave manager
+    wave: {
+      n: 0,
+      inProgress: false,
+      nextIn: 6,
+      predatorsAlive: 0,
+      bannerTimer: 0
+    },
+
     pheromone: {
-      gw: 0, gh: 0,
+      gw: 0,
+      gh: 0,
       imgData: null,
       cellSize: 12,
       decayPerSecond: 0.90,
@@ -22,26 +32,30 @@ export function createState() {
 
       home: { values: null, values2: null },
       food: { values: null, values2: null },
-      danger: { values: null, values2: null } // NEW
+      danger: { values: null, values2: null }
     },
 
     ants: [],
 
+    // NEW: multi predator waves
+    predators: [],
+
+    // Back-compat (not used by wave manager, but kept so nothing breaks)
     predator: {
       active: false,
       x: 0, y: 0,
       vx: 0, vy: 0,
       hp: 0,
       maxHp: 80,
-      spawnTimer: 6,      // seconds until first spawn
-      emitStrength: 10.0, // danger pheromone strength
+      spawnTimer: 6,
+      emitStrength: 10.0,
       speed: 55
     },
 
     tuning: {
-      soldierFraction: 0.22, // ~22% of ants become soldiers when threat is high
-      threatRise: 25,        // threat per second while predator is active
-      threatFall: 14         // threat per second while no predator
+      soldierFraction: 0.22, // scales by threat (0..100)
+      threatRise: 25,
+      threatFall: 14
     }
   };
 }

@@ -5,15 +5,21 @@ export function createState() {
     view: { w: 0, h: 0, dpr: 1 },
     input: { pointerDown: false, x: 0, y: 0 },
 
+    nest: { x: 0, y: 0, r: 18 },
+
+    foodNodes: [],
+
     pheromone: {
       gw: 0,
       gh: 0,
-      values: null,
-      values2: null,
       imgData: null,
       cellSize: 12,
-      decayPerSecond: 0.88,
-      diffuseRate: 0.22
+      decayPerSecond: 0.90,
+      diffuseRate: 0.22,
+
+      // two pheromone types
+      home: { values: null, values2: null },
+      food: { values: null, values2: null }
     },
 
     ants: []

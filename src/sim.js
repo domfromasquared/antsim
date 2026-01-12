@@ -121,4 +121,63 @@ export function stepSim(state, dt) {
 
   // 4) ant logic
   const ants = state.ants ?? [];
-  cons
+  const nest = state.nest;
+  const foodNodes = state.foodNodes ?? [];
+
+  for (let ant of ants) {
+    // Pickup / dropoff checks (dx/dy in DPR pixels)
+    if (!ant.carrying) {
+      for (let node of foodNodes) {
+        if (node.amount <= 0) continue;
+
+        const dx = node.x - ant.x;
+        const dy = node.y - ant.y;
+
+        // Slightly bigger pickup radius makes loops start sooner
+        const pickupR = 20 * dpr; // 20 CSS px
+        if (dx * dx + dy * dy < pickupR * pickupR) {
+          ant.carrying = true;
+          node.amount -= 1;
+          break;
+        }
+      }
+    } else if (nest) {
+      const dx = nest.x - ant.x;
+      const dy = nest.y - ant.y;
+
+      const dropR = (nest.r * 1.25) * dpr; // easier dropoff
+      if (dx * dx + dy * dy < dropR * dropR) {
+        ant.carrying = false;
+        state.ui.food += 1;
+      }
+    }
+
+    // Choose which field to follow
+    // - Not carrying: follow FOOD
+    // - Carrying: follow HOME
+    const followField = ant.carrying ? p.home.values : p.food.values;
+    const depositField = ant.carrying ? p.food.values : p.home.values;
+
+    const sampled = sampleBestDir(followField, gw, gh, p.cellSize, dpr, ant.x, ant.y);
+
+    // Lower threshold so they “lock” sooner
+    if (sampled.bestVal > 0.006) {
+      ant.dir = sampled.dir;
+    } else {
+      ant.dir += (Math.random() - 0.5) * 0.35;
+    }
+
+    // Move (ant.x/y are in DPR pixels; speed is in CSS px/sec, so multiply by dpr)
+    ant.x += Math.cos(ant.dir) * ant.speed * dt * dpr;
+    ant.y += Math.sin(ant.dir) * ant.speed * dt * dpr;
+
+    // Bounds bounce
+    if (ant.x < 0) { ant.x = 0; ant.dir = Math.PI - ant.dir; }
+    if (ant.x > state.view.w) { ant.x = state.view.w; ant.dir = Math.PI - ant.dir; }
+    if (ant.y < 0) { ant.y = 0; ant.dir = -ant.dir; }
+    if (ant.y > state.view.h) { ant.y = state.view.h; ant.dir = -ant.dir; }
+
+    // Leave trail
+    deposit(depositField, gw, gh, p.cellSize, dpr, ant.x, ant.y, 0.45);
+  }
+}

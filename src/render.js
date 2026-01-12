@@ -26,70 +26,43 @@ function drawHeatmap(ctx, state) {
 
   const hasHomeFood = !!(p.home?.values && p.food?.values);
   const hasDanger = !!(p.danger?.values);
-  const hasSingle = !!(p.values);
+  if (!hasHomeFood) return;
 
-  if (!hasHomeFood && !hasSingle) return;
-
-  // pick fields
-  const home = hasHomeFood ? p.home.values : null;
-  const food = hasHomeFood ? p.food.values : null;
+  const home = p.home.values;
+  const food = p.food.values;
   const danger = hasDanger ? p.danger.values : null;
-  const vals = hasSingle ? p.values : null;
 
   // smoothed max for stable normalization
   let maxNow = 0.0001;
-
-  if (hasHomeFood) {
-    for (let i = 0; i < home.length; i++) {
-      const h = home[i];
-      const f = food[i];
-      if (h > maxNow) maxNow = h;
-      if (f > maxNow) maxNow = f;
-      if (danger && danger[i] > maxNow) maxNow = danger[i];
-    }
-  } else {
-    for (let i = 0; i < vals.length; i++) {
-      const v = vals[i];
-      if (v > maxNow) maxNow = v;
-    }
+  for (let i = 0; i < home.length; i++) {
+    const h = home[i];
+    const f = food[i];
+    if (h > maxNow) maxNow = h;
+    if (f > maxNow) maxNow = f;
+    if (danger && danger[i] > maxNow) maxNow = danger[i];
   }
 
   _maxSmooth = _maxSmooth * 0.92 + maxNow * 0.08;
   const max = Math.max(0.0001, _maxSmooth);
 
-  // write pixels
-  if (hasHomeFood) {
-    for (let i = 0; i < home.length; i++) {
-      const h = Math.min(1, home[i] / max);     // 0..1
-      const f = Math.min(1, food[i] / max);     // 0..1
-      const d = danger ? Math.min(1, danger[i] / max) : 0;
+  for (let i = 0; i < home.length; i++) {
+    const h = Math.min(1, home[i] / max);
+    const f = Math.min(1, food[i] / max);
+    const d = danger ? Math.min(1, danger[i] / max) : 0;
 
-      const idx = i * 4;
+    const idx = i * 4;
 
-      // Boost so channels are easy to see
-      const dBoost = Math.min(1, d * 2.2);
-      const fBoost = Math.min(1, f * 2.4);
-      const hBoost = Math.min(1, h * 1.4);
+    const dBoost = Math.min(1, d * 2.2);
+    const fBoost = Math.min(1, f * 2.4);
+    const hBoost = Math.min(1, h * 1.4);
 
-      // danger=red, food=green, home=blue
-      data[idx + 0] = Math.floor(dBoost * 255);
-      data[idx + 1] = Math.floor(fBoost * 255);
-      data[idx + 2] = Math.floor(hBoost * 255);
+    // danger=red, food=green, home=blue
+    data[idx + 0] = Math.floor(dBoost * 255);
+    data[idx + 1] = Math.floor(fBoost * 255);
+    data[idx + 2] = Math.floor(hBoost * 255);
 
-      const a = Math.min(1, dBoost * 1.0 + fBoost * 0.8 + hBoost * 0.6);
-      data[idx + 3] = Math.floor(a * 230);
-    }
-  } else {
-    for (let i = 0; i < vals.length; i++) {
-      const v = vals[i] / max;
-      const a = Math.max(0, Math.min(1, v));
-      const idx = i * 4;
-
-      data[idx + 0] = 255;
-      data[idx + 1] = 255;
-      data[idx + 2] = 255;
-      data[idx + 3] = Math.floor(a * 180);
-    }
+    const a = Math.min(1, dBoost * 1.0 + fBoost * 0.8 + hBoost * 0.6);
+    data[idx + 3] = Math.floor(a * 230);
   }
 
   // push ImageData to temp canvas then scale to screen
@@ -131,7 +104,34 @@ function drawNestAndFood(ctx, state) {
   }
 }
 
-function drawPredator(ctx, state) {
+function drawPredators(ctx, state) {
+  // Prefer multi-predators
+  const predators = Array.isArray(state.predators) ? state.predators : [];
+  if (predators.length) {
+    for (const pr of predators) {
+      if (!pr.active) continue;
+
+      const r = 10 * state.view.dpr;
+      ctx.fillStyle = "rgba(255,80,80,0.9)";
+      ctx.beginPath();
+      ctx.arc(pr.x, pr.y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      const hp01 = Math.max(0, Math.min(1, pr.hp / (pr.maxHp || 80)));
+      const w = 34 * state.view.dpr;
+      const h = 5 * state.view.dpr;
+      const x = pr.x - w * 0.5;
+      const y = pr.y - r - 10 * state.view.dpr;
+
+      ctx.fillStyle = "rgba(255,255,255,0.25)";
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = "rgba(255,80,80,0.95)";
+      ctx.fillRect(x, y, w * hp01, h);
+    }
+    return;
+  }
+
+  // Back-compat single predator
   const predator = state.predator;
   if (!predator || !predator.active) return;
 
@@ -140,18 +140,6 @@ function drawPredator(ctx, state) {
   ctx.beginPath();
   ctx.arc(predator.x, predator.y, r, 0, Math.PI * 2);
   ctx.fill();
-
-  // simple hp bar
-  const hp01 = Math.max(0, Math.min(1, predator.hp / (predator.maxHp || 80)));
-  const w = 34 * state.view.dpr;
-  const h = 5 * state.view.dpr;
-  const x = predator.x - w * 0.5;
-  const y = predator.y - r - 10 * state.view.dpr;
-
-  ctx.fillStyle = "rgba(255,255,255,0.25)";
-  ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "rgba(255,80,80,0.95)";
-  ctx.fillRect(x, y, w * hp01, h);
 }
 
 function drawAnts(ctx, state) {
@@ -191,6 +179,32 @@ function drawNestHp(ctx, state) {
   ctx.fillRect(x, y, w * hp01, h);
 }
 
+function drawWaveUi(ctx, state) {
+  const wave = state.wave;
+  if (!wave) return;
+
+  const dpr = state.view.dpr;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.font = `${14 * dpr}px system-ui`;
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+
+  const text = wave.inProgress
+    ? `WAVE ${wave.n}  •  ENEMIES ${wave.predatorsAlive}`
+    : `NEXT WAVE IN ${Math.max(0, Math.ceil(wave.nextIn))}s`;
+
+  ctx.fillText(text, state.view.w * 0.5, 30 * dpr);
+
+  if (wave.bannerTimer > 0) {
+    ctx.font = `${22 * dpr}px system-ui`;
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.fillText(`WAVE ${wave.n}`, state.view.w * 0.5, state.view.h * 0.12);
+  }
+
+  ctx.restore();
+}
+
 function drawGameOver(ctx, state) {
   if (!state.game?.over) return;
 
@@ -226,14 +240,16 @@ export function render(ctx, state) {
   // landmarks
   drawNestAndFood(ctx, state);
 
-  // predator
-  drawPredator(ctx, state);
+  // predators
+  drawPredators(ctx, state);
 
   // ants above heatmap
-drawAnts(ctx, state);
+  drawAnts(ctx, state);
 
-drawNestHp(ctx, state);
-drawGameOver(ctx, state);
+  // UI
+  drawNestHp(ctx, state);
+  drawWaveUi(ctx, state);
+  drawGameOver(ctx, state);
 
   // pointer indicator
   if (state.input?.pointerDown) {

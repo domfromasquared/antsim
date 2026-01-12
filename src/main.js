@@ -1,5 +1,5 @@
 import { createState } from "./state.js";
-import { stepSim } from "./sim.js";
+import { stepSim, loadGame } from "./sim.js";
 import { render } from "./render.js";
 import { attachInput } from "./input.js";
 
@@ -99,7 +99,8 @@ window.addEventListener("resize", resize, { passive: true });
 // IMPORTANT: resize first, then init world, then spawn
 resize();
 initWorld();
-spawnAnts(30);
+loadGame(state);   // NEW (import it)
+if (!state.ants || state.ants.length === 0) spawnAnts(30);
 
 // Fixed timestep sim
 let last = performance.now();

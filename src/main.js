@@ -26,6 +26,9 @@ state.pheromone.home.values2 = new Float32Array(gw * gh);
 state.pheromone.food.values = new Float32Array(gw * gh);
 state.pheromone.food.values2 = new Float32Array(gw * gh);
 
+state.pheromone.danger.values = new Float32Array(gw * gh);
+state.pheromone.danger.values2 = new Float32Array(gw * gh);
+
 state.pheromone.imgData = new ImageData(gw, gh);
 
 }
@@ -82,7 +85,8 @@ function spawnAnts(count = 30) {
   y: cy + (Math.random() - 0.5) * 40,
   dir: Math.random() * Math.PI * 2,
   speed: 30 + Math.random() * 20,
-  carrying: false
+  carrying: false,
+  role: "worker"
     });
   }
 }

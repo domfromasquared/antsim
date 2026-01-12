@@ -18,19 +18,22 @@ function initPheromoneGrid() {
   const gh = Math.max(8, Math.floor(cssH / cs));
 
   state.pheromone.gw = gw;
-state.pheromone.gh = gh;
+  state.pheromone.gh = gh;
 
-state.pheromone.home.values = new Float32Array(gw * gh);
-state.pheromone.home.values2 = new Float32Array(gw * gh);
+  state.pheromone.home ??= {};
+  state.pheromone.food ??= {};
+  state.pheromone.danger ??= {};
 
-state.pheromone.food.values = new Float32Array(gw * gh);
-state.pheromone.food.values2 = new Float32Array(gw * gh);
+  state.pheromone.home.values = new Float32Array(gw * gh);
+  state.pheromone.home.values2 = new Float32Array(gw * gh);
 
-state.pheromone.danger.values = new Float32Array(gw * gh);
-state.pheromone.danger.values2 = new Float32Array(gw * gh);
+  state.pheromone.food.values = new Float32Array(gw * gh);
+  state.pheromone.food.values2 = new Float32Array(gw * gh);
 
-state.pheromone.imgData = new ImageData(gw, gh);
+  state.pheromone.danger.values = new Float32Array(gw * gh);
+  state.pheromone.danger.values2 = new Float32Array(gw * gh);
 
+  state.pheromone.imgData = new ImageData(gw, gh);
 }
 
 function resize() {
@@ -79,7 +82,7 @@ function spawnAnts(count = 30) {
 
   state.ants.length = 0; // reset so we don’t double-spawn on reloads
 
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 0; i++) {
     state.ants.push({
   x: cx + (Math.random() - 0.5) * 40,
   y: cy + (Math.random() - 0.5) * 40,
@@ -93,8 +96,9 @@ function spawnAnts(count = 30) {
 
 window.addEventListener("resize", resize, { passive: true });
 
-// IMPORTANT: resize first, then spawn
+// IMPORTANT: resize first, then init world, then spawn
 resize();
+initWorld();
 spawnAnts(30);
 
 // Fixed timestep sim

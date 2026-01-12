@@ -1,6 +1,7 @@
 export function createState() {
   return {
     time: 0,
+
     ui: { food: 0, biomass: 0, threat: 0 },
     view: { w: 0, h: 0, dpr: 1 },
     input: { pointerDown: false, x: 0, y: 0 },
@@ -8,12 +9,8 @@ export function createState() {
     nest: { x: 0, y: 0, r: 18, hp: 100, maxHp: 100 },
     foodNodes: [],
 
-    game: {
-      over: false,
-      message: ""
-    },
+    game: { over: false, message: "" },
 
-    // NEW: wave manager
     wave: {
       n: 0,
       inProgress: false,
@@ -37,25 +34,35 @@ export function createState() {
 
     ants: [],
 
-    // NEW: multi predator waves
     predators: [],
 
-    // Back-compat (not used by wave manager, but kept so nothing breaks)
-    predator: {
-      active: false,
-      x: 0, y: 0,
-      vx: 0, vy: 0,
-      hp: 0,
-      maxHp: 80,
-      spawnTimer: 6,
-      emitStrength: 10.0,
-      speed: 55
-    },
-
     tuning: {
-      soldierFraction: 0.22, // scales by threat (0..100)
+      soldierFraction: 0.22,
       threatRise: 25,
       threatFall: 14
+    },
+
+    // --- NEW: Brood growth ---
+    brood: {
+      timer: 0,
+      intervalBase: 2.5,   // base hatch interval (sec)
+      cost: 8,             // food per hatch
+      costGrowth: 1.06,    // cost multiplier per hatch
+      maxAnts: 120
+    },
+
+    // --- NEW: Upgrades ---
+    upgrades: {
+      brood: 0, // faster hatch
+      dps: 0,   // soldier damage
+      nest: 0   // nest max hp
+    },
+
+    // --- NEW: UI hitboxes (computed in render, used by sim) ---
+    uiHit: {
+      brood: null,
+      dps: null,
+      nest: null
     }
   };
 }

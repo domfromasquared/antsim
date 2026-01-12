@@ -63,8 +63,12 @@ function drawHeatmap(ctx, state) {
 
       // low red base, food=green, home=blue
       data[idx + 0] = 40;
-      data[idx + 1] = Math.floor(f * 255);
-      data[idx + 2] = Math.floor(h * 255);
+      const fBoost = Math.min(1, f * 2.2);
+      const hBoost = Math.min(1, h * 1.2);
+
+      data[idx + 1] = Math.floor(fBoost * 255); // FOOD stronger green
+      data[idx + 2] = Math.floor(hBoost * 255); // HOME slightly boosted too
+
       data[idx + 3] = Math.floor(Math.min(1, (h + f) * 0.8) * 200);
     }
   } else {

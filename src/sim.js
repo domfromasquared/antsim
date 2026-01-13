@@ -1,21 +1,28 @@
 // src/sim.js
-const SAVE_KEY = "antsim_save_v3";
+const SAVE_KEY = "antsim_save_v4";
 let _saveTimer = 0;
 
 const TECH = {
   scouts: {
     name: "Scout Division",
-    desc: "Unlock scout ants (faster + better food sensing).",
     costBiomass: 8,
     req: (s) => (s.wave?.n ?? 0) >= 2
   },
   sentry: {
     name: "Sentry Pylons",
-    desc: "Build 1 nest pylon that zaps predators.",
     costBiomass: 12,
     req: (s) => (s.milestones?.totalBiomass ?? 0) >= 10
   }
 };
+
+// --- civ building defs ---
+const BUILD = {
+  nursery: { baseCost: 6, time: 1.5, radiusCss: 90, maxAssigned: 6 },
+  hatchery: { baseCost: 10, time: 2.5, radiusCss: 100, maxAssigned: 6 },
+  storehouse: { baseCost: 8, time: 0, radiusCss: 0, maxAssigned: 0 }
+};
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
 function diffuseField(front, back, gw, gh, k) {
   for (let y = 0; y < gh; y++) {
@@ -45,7 +52,6 @@ function decayField(arr, decay) {
 function deposit(field, gw, gh, cellSize, dpr, px, py, amount) {
   if (!field) return;
 
-  // px/py are WORLD coords in canvas px. Convert to CSS px for grid mapping.
   const cssX = px / dpr;
   const cssY = py / dpr;
   const cx = Math.floor(cssX / cellSize);
@@ -147,15 +153,17 @@ function ensureSystems(state) {
   state.tuning ??= { soldierFraction: 0.22, threatRise: 25, threatFall: 14 };
   state.game ??= { over: false, message: "" };
 
-  state.brood ??= { timer: 0, intervalBase: 2.5, cost: 8, costGrowth: 1.06, maxAnts: 120 };
+  state.brood ??= { timer: 0, intervalBase: 2.5, cost: 8, costGrowth: 1.06, maxAnts: 140 };
   state.upgrades ??= { brood: 0, dps: 0, nest: 0 };
 
   state.tech ??= { unlocked: {}, purchased: {} };
-  state.buildings ??= { pylons: 0 };
+  state.buildings ??= { list: [], nextId: 1 };
+  state.build ??= { mode: null, ghostX: 0, ghostY: 0, dragging: false };
+
+  state.ui ??= { food: 0, biomass: 0, larvae: 0, threat: 0, maxFood: 200 };
 
   state.milestones ??= { bestWave: 0, totalBiomass: 0, peakAnts: 0 };
-
-  state.uiHit ??= { brood: null, dps: null, nest: null, tech_scouts: null, tech_sentry: null };
+  state.uiHit ??= {};
 }
 
 function resetPheromones(state) {
@@ -175,8 +183,8 @@ function applyNestUpgrade(state) {
 }
 
 function resetRunState(state) {
-  // keep upgrades/tech/milestones, reset run
   state.ui.food = 0;
+  state.ui.larvae = 0;
   state.ui.threat = 0;
 
   state.predators = [];
@@ -190,6 +198,12 @@ function resetRunState(state) {
 
   applyNestUpgrade(state);
   state.nest.hp = state.nest.maxHp;
+
+  // keep buildings/tech/upgrades; confirm food cap after storehouses
+  recalcCivPassives(state);
+
+  // reset building progress
+  for (const b of state.buildings.list) b.progress = 0;
 
   resetPheromones(state);
 }
@@ -240,7 +254,6 @@ function tryPurchaseUpgrade(state, key) {
 
   state.ui.biomass -= cost;
   state.upgrades[key] = lvl + 1;
-
   if (key === "nest") applyNestUpgrade(state);
   return true;
 }
@@ -260,10 +273,115 @@ function buyTech(state, key) {
   state.ui.biomass -= t.costBiomass;
   state.tech.unlocked[key] = true;
 
-  if (key === "sentry") {
-    state.buildings.pylons = (state.buildings.pylons ?? 0) + 1;
-  }
+  // legacy: keep sentry tech usable later if you still want pylons; civ v1 focuses buildings
   return true;
+}
+
+function buildingCount(state, type) {
+  let n = 0;
+  for (const b of state.buildings.list) if (b.type === type) n++;
+  return n;
+}
+
+function buildingCost(state, type) {
+  const base = BUILD[type].baseCost;
+  const n = buildingCount(state, type);
+  return Math.floor(base + n * 2 + n * n * 0.25);
+}
+
+function snapWorld(state, wx, wy) {
+  // snap to a coarse grid (CSS 24px) for nicer placement
+  const dpr = state.view.dpr;
+  const cellCss = 24;
+  const cell = cellCss * dpr;
+  return {
+    x: Math.round(wx / cell) * cell,
+    y: Math.round(wy / cell) * cell
+  };
+}
+
+function placeBuilding(state, type, wx, wy) {
+  const cost = buildingCost(state, type);
+  if ((state.ui.biomass ?? 0) < cost) return false;
+
+  const s = snapWorld(state, wx, wy);
+  const x = clamp(s.x, 0, state.world.w);
+  const y = clamp(s.y, 0, state.world.h);
+
+  // simple overlap guard
+  for (const b of state.buildings.list) {
+    const dx = b.x - x;
+    const dy = b.y - y;
+    if (dx * dx + dy * dy < (40 * state.view.dpr) ** 2) return false;
+  }
+  // avoid placing on top of nest
+  {
+    const dx = state.nest.x - x;
+    const dy = state.nest.y - y;
+    if (dx * dx + dy * dy < (60 * state.view.dpr) ** 2) return false;
+  }
+
+  state.ui.biomass -= cost;
+
+  state.buildings.list.push({
+    id: state.buildings.nextId++,
+    type,
+    x,
+    y,
+    lvl: 1,
+    progress: 0
+  });
+
+  recalcCivPassives(state);
+  return true;
+}
+
+function recalcCivPassives(state) {
+  const stores = buildingCount(state, "storehouse");
+  state.ui.maxFood = 200 + stores * 120;
+
+  // efficiency: slightly reduce brood cost growth
+  const eff = 1.06 - stores * 0.005;
+  state.brood.costGrowth = Math.max(1.02, eff);
+
+  // clamp food to max
+  state.ui.food = Math.min(state.ui.food ?? 0, state.ui.maxFood ?? 200);
+}
+
+function countAssignedWorkers(state, b) {
+  // count nearby idle-ish workers (role worker/scout, not carrying, not currently panicking)
+  const dpr = state.view.dpr;
+  const def = BUILD[b.type];
+  const radius = (def.radiusCss || 0) * dpr;
+  if (radius <= 0) return 0;
+
+  let count = 0;
+  for (const a of state.ants) {
+    const role = a.role || "worker";
+    if (role !== "worker" && role !== "scout") continue;
+    if (a.carrying) continue;
+
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    if (dx * dx + dy * dy < radius * radius) {
+      count++;
+      if (count >= def.maxAssigned) break;
+    }
+  }
+  return count;
+}
+
+function chooseHatchRole(state) {
+  const threat = state.ui.threat ?? 0;
+  if (threat >= 60) return "soldier";
+
+  // keep some scouts if unlocked
+  if (state.tech?.unlocked?.scouts) {
+    let scouts = 0;
+    for (const a of state.ants) if ((a.role || "worker") === "scout") scouts++;
+    if (scouts / Math.max(1, state.ants.length) < 0.15) return "scout";
+  }
+  return "worker";
 }
 
 function saveGame(state) {
@@ -271,20 +389,20 @@ function saveGame(state) {
     const payload = {
       ui: {
         food: state.ui.food ?? 0,
-        biomass: state.ui.biomass ?? 0
+        biomass: state.ui.biomass ?? 0,
+        larvae: state.ui.larvae ?? 0,
+        maxFood: state.ui.maxFood ?? 200
       },
       upgrades: state.upgrades ?? { brood: 0, dps: 0, nest: 0 },
       brood: {
         cost: state.brood.cost ?? 8,
-        maxAnts: state.brood.maxAnts ?? 120
+        maxAnts: state.brood.maxAnts ?? 140,
+        costGrowth: state.brood.costGrowth ?? 1.06
       },
       wave: { n: state.wave?.n ?? 0 },
-      nest: {
-        maxHp: state.nest.maxHp ?? 100,
-        hp: state.nest.hp ?? 100
-      },
+      nest: { maxHp: state.nest.maxHp ?? 100, hp: state.nest.hp ?? 100 },
       tech: state.tech ?? { unlocked: {}, purchased: {} },
-      buildings: state.buildings ?? { pylons: 0 },
+      buildings: state.buildings ?? { list: [], nextId: 1 },
       milestones: state.milestones ?? { bestWave: 0, totalBiomass: 0, peakAnts: 0 },
       antsCount: state.ants?.length ?? 0
     };
@@ -305,17 +423,21 @@ export function loadGame(state) {
     ensureSystems(state);
 
     if (s.upgrades) state.upgrades = { ...state.upgrades, ...s.upgrades };
-
     if (s.tech) state.tech = { ...state.tech, ...s.tech };
-    if (s.buildings) state.buildings = { ...state.buildings, ...s.buildings };
     if (s.milestones) state.milestones = { ...state.milestones, ...s.milestones };
+
+    if (s.buildings?.list) state.buildings.list = s.buildings.list;
+    if (s.buildings?.nextId != null) state.buildings.nextId = s.buildings.nextId;
 
     if (s.brood?.cost != null) state.brood.cost = s.brood.cost;
     if (s.brood?.maxAnts != null) state.brood.maxAnts = s.brood.maxAnts;
+    if (s.brood?.costGrowth != null) state.brood.costGrowth = s.brood.costGrowth;
 
     if (s.ui) {
       state.ui.food = s.ui.food ?? state.ui.food;
       state.ui.biomass = s.ui.biomass ?? state.ui.biomass;
+      state.ui.larvae = s.ui.larvae ?? state.ui.larvae;
+      state.ui.maxFood = s.ui.maxFood ?? state.ui.maxFood;
     }
 
     if (s.wave?.n != null) state.wave.n = Math.max(0, s.wave.n);
@@ -323,7 +445,10 @@ export function loadGame(state) {
     applyNestUpgrade(state);
     if (s.nest?.hp != null) state.nest.hp = Math.min(state.nest.maxHp, Math.max(0, s.nest.hp));
 
-    const desired = Math.min(s.antsCount ?? 30, state.brood.maxAnts ?? 120);
+    recalcCivPassives(state);
+
+    // rebuild ants
+    const desired = Math.min(s.antsCount ?? 30, state.brood.maxAnts ?? 140);
     state.ants.length = 0;
     for (let i = 0; i < desired; i++) {
       state.ants.push({
@@ -343,14 +468,15 @@ export function loadGame(state) {
 export function stepSim(state, dt) {
   ensureSystems(state);
 
-  // consume input edge flags
   const tapped = !!(state.input?.justReleased && state.input?.wasTap);
+  const released = !!state.input?.justReleased;
+
+  // consume edge flags
   if (state.input) {
     state.input.justPressed = false;
     state.input.justReleased = false;
   }
 
-  // tap-to-restart
   if (state.game?.over) {
     if (tapped) resetRunState(state);
     return;
@@ -368,49 +494,85 @@ export function stepSim(state, dt) {
     saveGame(state);
   }
 
-  // milestones (continuous)
+  // milestones
   state.milestones.bestWave = Math.max(state.milestones.bestWave, state.wave?.n ?? 0);
   state.milestones.peakAnts = Math.max(state.milestones.peakAnts, state.ants?.length ?? 0);
 
   const gw = p.gw, gh = p.gh;
   const dpr = state.view.dpr;
 
-  // upgrades impact brood + nest
   applyNestUpgrade(state);
-  const broodLvl = state.upgrades?.brood ?? 0;
-  const broodInterval = Math.max(0.9, (state.brood.intervalBase ?? 2.5) - broodLvl * 0.35);
 
-  // handle tap on UI (screen coords)
+  // ---- CIV INPUT: build bar + ghost + release-to-place ----
   if (tapped) {
     const x = state.input.x;
     const y = state.input.y;
     const hit = state.uiHit || {};
 
-    if (pointInRect(x, y, hit.brood)) tryPurchaseUpgrade(state, "brood");
-    else if (pointInRect(x, y, hit.dps)) tryPurchaseUpgrade(state, "dps");
-    else if (pointInRect(x, y, hit.nest)) tryPurchaseUpgrade(state, "nest");
-    else if (pointInRect(x, y, hit.tech_scouts)) buyTech(state, "scouts");
-    else if (pointInRect(x, y, hit.tech_sentry)) buyTech(state, "sentry");
+    // tap icon toggles mode
+    const tapNursery = pointInRect(x, y, hit.build_nursery);
+    const tapHatchery = pointInRect(x, y, hit.build_hatchery);
+    const tapStore = pointInRect(x, y, hit.build_storehouse);
+
+    if (tapNursery || tapHatchery || tapStore) {
+      const next = tapNursery ? "nursery" : tapHatchery ? "hatchery" : "storehouse";
+      state.build.mode = (state.build.mode === next) ? null : next;
+
+      if (state.build.mode) {
+        state.build.ghostX = state.input.wx;
+        state.build.ghostY = state.input.wy;
+      }
+    }
   }
 
-  // brood (food -> new ants)
+  // while dragging, keep ghost snapped-ish (world coords already updated by input.js)
+  if (state.build?.mode && state.build.dragging) {
+    const s = snapWorld(state, state.input.wx, state.input.wy);
+    state.build.ghostX = s.x;
+    state.build.ghostY = s.y;
+  }
+
+  // on release: if we were in build mode and the release isn't on UI, attempt place
+  if (released && state.build?.mode) {
+    const x = state.input.x;
+    const y = state.input.y;
+    const hit = state.uiHit || {};
+
+    const releasedOnUI =
+      pointInRect(x, y, hit.build_nursery) ||
+      pointInRect(x, y, hit.build_hatchery) ||
+      pointInRect(x, y, hit.build_storehouse);
+
+    if (!releasedOnUI) {
+      const ok = placeBuilding(state, state.build.mode, state.build.ghostX, state.build.ghostY);
+      // if placed successfully, stay in mode for fast multi-place; if not, keep mode but do nothing
+      if (ok) {
+        // small QoL: update ghost to current pointer
+        state.build.ghostX = state.input.wx;
+        state.build.ghostY = state.input.wy;
+      }
+    }
+  }
+
+  // ---- Brood interval (upgrades + storehouse efficiency already applied in recalcCivPassives) ----
+  const broodLvl = state.upgrades?.brood ?? 0;
+  const broodInterval = Math.max(0.9, (state.brood.intervalBase ?? 2.5) - broodLvl * 0.35);
+
+  // natural brood (still useful even with hatchery)
   state.brood.timer += dt;
   if (state.brood.timer >= broodInterval) {
     state.brood.timer = 0;
 
-    if ((state.ui.food ?? 0) >= (state.brood.cost ?? 8) && state.ants.length < (state.brood.maxAnts ?? 120)) {
+    if ((state.ui.food ?? 0) >= (state.brood.cost ?? 8) && state.ants.length < (state.brood.maxAnts ?? 140)) {
       state.ui.food -= state.brood.cost;
       state.brood.cost = Math.ceil(state.brood.cost * (state.brood.costGrowth ?? 1.06));
 
       let role = "worker";
       if (state.tech?.unlocked?.scouts && Math.random() < 0.20) role = "scout";
 
-      const nx = state.nest.x + (Math.random() - 0.5) * 30 * dpr;
-      const ny = state.nest.y + (Math.random() - 0.5) * 30 * dpr;
-
       state.ants.push({
-        x: nx,
-        y: ny,
+        x: state.nest.x + (Math.random() - 0.5) * 30 * dpr,
+        y: state.nest.y + (Math.random() - 0.5) * 30 * dpr,
         dir: Math.random() * Math.PI * 2,
         speed: role === "scout" ? (46 + Math.random() * 14) : (30 + Math.random() * 20),
         carrying: false,
@@ -419,7 +581,7 @@ export function stepSim(state, dt) {
     }
   }
 
-  // pheromone update
+  // ---- pheromone update ----
   const decay = Math.pow(p.decayPerSecond ?? 0.92, dt);
   const k = p.diffuseRate ?? 0.22;
 
@@ -438,7 +600,6 @@ export function stepSim(state, dt) {
   const nest = state.nest;
   const foodNodes = state.foodNodes ?? [];
 
-  // emitters
   deposit(p.home.values, gw, gh, p.cellSize, dpr, nest.x, nest.y, 7.0);
 
   for (const node of foodNodes) {
@@ -447,12 +608,12 @@ export function stepSim(state, dt) {
     deposit(p.food.values, gw, gh, p.cellSize, dpr, node.x, node.y, strength);
   }
 
-  // paint food pheromone on touch (WORLD coords)
+  // touch paint food (world coords)
   if (state.input?.pointerDown) {
     deposit(p.food.values, gw, gh, p.cellSize, dpr, state.input.wx, state.input.wy, 4.0);
   }
 
-  // wave manager
+  // ---- wave manager ----
   const wave = state.wave;
 
   if (!wave.inProgress) {
@@ -478,7 +639,7 @@ export function stepSim(state, dt) {
   }
   if (wave.bannerTimer > 0) wave.bannerTimer -= dt;
 
-  // predators update
+  // ---- predators update ----
   let anyPredatorActive = false;
   for (const pr of state.predators) {
     if (!pr.active) continue;
@@ -509,41 +670,56 @@ export function stepSim(state, dt) {
     }
   }
 
-  // pylons (if any)
-  const pylons = state.buildings?.pylons ?? 0;
-  if (pylons > 0 && state.predators?.length) {
-    const ringR = (nest.r + 32) * dpr;
-    for (let i = 0; i < pylons; i++) {
-      const ang = (i / pylons) * Math.PI * 2;
-      const px = nest.x + Math.cos(ang) * ringR;
-      const py = nest.y + Math.sin(ang) * ringR;
-
-      const target = nearestPredator(state.predators, px, py);
-      if (!target) continue;
-
-      const dx = target.x - px;
-      const dy = target.y - py;
-      const range = 90 * dpr;
-
-      if (dx * dx + dy * dy < range * range) {
-        target.hp -= 12 * dt;
-        deposit(p.danger.values, gw, gh, p.cellSize, dpr, px, py, 1.2);
-
-        if (target.hp <= 0) {
-          target.hp = 0;
-          target.active = false;
-          state.ui.biomass = (state.ui.biomass ?? 0) + 1;
-          state.milestones.totalBiomass = (state.milestones.totalBiomass ?? 0) + 1;
-        }
-      }
-    }
-  }
-
   // threat meter
   if (anyPredatorActive) state.ui.threat = Math.min(100, state.ui.threat + state.tuning.threatRise * dt);
   else state.ui.threat = Math.max(0, state.ui.threat - state.tuning.threatFall * dt);
 
-  // soldiers promotion
+  // ---- CIV PRODUCTION ----
+  // buildings run every tick; assigned workers speed them up
+  for (const b of state.buildings.list) {
+    const def = BUILD[b.type];
+    if (!def) continue;
+
+    const assigned = countAssignedWorkers(state, b);
+    const speed = 1 + assigned * 0.6;
+
+    if (b.type === "nursery") {
+      // Food -> Larvae
+      b.progress += (dt / def.time) * speed;
+      while (b.progress >= 1) {
+        if ((state.ui.food ?? 0) <= 0) { b.progress = 0.99; break; }
+        state.ui.food -= 1;
+        state.ui.larvae = (state.ui.larvae ?? 0) + 1;
+        b.progress -= 1;
+      }
+    } else if (b.type === "hatchery") {
+      // Larvae -> Ant
+      b.progress += (dt / def.time) * speed;
+      while (b.progress >= 1) {
+        if ((state.ui.larvae ?? 0) < 2) { b.progress = 0.99; break; }
+        if (state.ants.length >= (state.brood.maxAnts ?? 140)) { b.progress = 0.99; break; }
+
+        state.ui.larvae -= 2;
+
+        const role = chooseHatchRole(state);
+        const baseSpeed = role === "scout" ? (46 + Math.random() * 14) : (30 + Math.random() * 20);
+        state.ants.push({
+          x: b.x + (Math.random() - 0.5) * 24 * dpr,
+          y: b.y + (Math.random() - 0.5) * 24 * dpr,
+          dir: Math.random() * Math.PI * 2,
+          speed: baseSpeed,
+          carrying: false,
+          role
+        });
+
+        b.progress -= 1;
+      }
+    } else if (b.type === "storehouse") {
+      b.progress = 0;
+    }
+  }
+
+  // ---- soldiers promotion (existing pressure system) ----
   const ants = state.ants ?? [];
   const threat01 = (state.ui.threat ?? 0) / 100;
   const frac = Math.min(0.35, state.tuning.soldierFraction ?? 0.22);
@@ -574,11 +750,11 @@ export function stepSim(state, dt) {
     }
   }
 
-  // ants
+  // ---- ant logic ----
   for (const ant of ants) {
     const role = ant.role || "worker";
 
-    // pickup/dropoff (worker + scout forage)
+    // pickup/dropoff (worker + scout)
     if (role === "worker" || role === "scout") {
       if (!ant.carrying) {
         for (const node of foodNodes) {
@@ -601,7 +777,7 @@ export function stepSim(state, dt) {
 
         if (dx * dx + dy * dy < dropR * dropR) {
           ant.carrying = false;
-          state.ui.food = (state.ui.food ?? 0) + 1;
+          state.ui.food = Math.min((state.ui.food ?? 0) + 1, state.ui.maxFood ?? 200);
         }
       }
     }

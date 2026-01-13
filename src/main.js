@@ -64,6 +64,21 @@ function resize() {
   state.camera.x = Math.max(0, Math.min(state.camera.x, maxX));
   state.camera.y = Math.max(0, Math.min(state.camera.y, maxY));
 
+  function initRevealGrid() {
+  const dpr = state.view.dpr;
+  const cssWorldW = Math.floor(state.world.w / dpr);
+  const cssWorldH = Math.floor(state.world.h / dpr);
+
+  const cs = state.reveal.cellSize;
+  const gw = Math.max(8, Math.floor(cssWorldW / cs));
+  const gh = Math.max(8, Math.floor(cssWorldH / cs));
+
+  state.reveal.gw = gw;
+  state.reveal.gh = gh;
+  state.reveal.seen = new Uint8Array(gw * gh);
+  state.reveal.imgData = new ImageData(gw, gh);
+}
+
   initPheromoneGrid();
 }
 

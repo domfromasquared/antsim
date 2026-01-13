@@ -20,7 +20,7 @@ export function createState() {
 
     // 3x world + camera (all in canvas pixels, i.e. DPR space)
     world: { w: 0, h: 0 },
-    camera: { x: 0, y: 0 },
+    camera: { x: 0, y: 0, dragging: false, },
 
     nest: { x: 0, y: 0, r: 18, hp: 100, maxHp: 100 },
     foodNodes: [],

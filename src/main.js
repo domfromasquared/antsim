@@ -1,6 +1,5 @@
-// src/main.js
 import { createState } from "./state.js";
-import { stepSim, loadGame } from "./sim.js";
+import { stepSim } from "./sim.js";
 import { render } from "./render.js";
 import { attachInput } from "./input.js";
 
@@ -11,21 +10,15 @@ const state = createState();
 attachInput(canvas, state);
 
 function initPheromoneGrid() {
-  const dpr = state.view.dpr || 1;
+  const cssW = Math.floor(window.innerWidth);
+  const cssH = Math.floor(window.innerHeight);
 
-  const cs = state.pheromone.cellSize; // CSS px per cell
-  const cssWorldW = Math.floor((state.world.w || state.view.w) / dpr);
-  const cssWorldH = Math.floor((state.world.h || state.view.h) / dpr);
-
-  const gw = Math.max(8, Math.floor(cssWorldW / cs));
-  const gh = Math.max(8, Math.floor(cssWorldH / cs));
+  const cs = state.pheromone.cellSize;
+  const gw = Math.max(8, Math.floor(cssW / cs));
+  const gh = Math.max(8, Math.floor(cssH / cs));
 
   state.pheromone.gw = gw;
   state.pheromone.gh = gh;
-
-  state.pheromone.home ??= {};
-  state.pheromone.food ??= {};
-  state.pheromone.danger ??= {};
 
   state.pheromone.home.values = new Float32Array(gw * gh);
   state.pheromone.home.values2 = new Float32Array(gw * gh);
@@ -35,6 +28,10 @@ function initPheromoneGrid() {
 
   state.pheromone.danger.values = new Float32Array(gw * gh);
   state.pheromone.danger.values2 = new Float32Array(gw * gh);
+
+  // NEW: command field
+  state.pheromone.command.values = new Float32Array(gw * gh);
+  state.pheromone.command.values2 = new Float32Array(gw * gh);
 
   state.pheromone.imgData = new ImageData(gw, gh);
 }
@@ -53,45 +50,39 @@ function resize() {
   state.view.w = w;
   state.view.h = h;
 
-  // 3x world
+  // Make world larger than screen
   state.world.w = w * 3;
   state.world.h = h * 3;
 
-  // clamp camera
-  const maxX = Math.max(0, state.world.w - state.view.w);
-  const maxY = Math.max(0, state.world.h - state.view.h);
-  state.camera.x = Math.max(0, Math.min(state.camera.x, maxX));
-  state.camera.y = Math.max(0, Math.min(state.camera.y, maxY));
+  // Center camera so nest feels centered-ish
+  state.camera.x = Math.max(0, (state.world.w - state.view.w) * 0.5);
+  state.camera.y = Math.max(0, (state.world.h - state.view.h) * 0.5);
+
+  // Place nest once if not set
+  if (!state.nest.x && !state.nest.y) {
+    state.nest.x = state.world.w * 0.5;
+    state.nest.y = state.world.h * 0.55;
+  }
+
+  // Create some food nodes once
+  if (!state.foodNodes.length) {
+    for (let i = 0; i < 4; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.min(state.world.w, state.world.h) * (0.25 + Math.random() * 0.25);
+      state.foodNodes.push({
+        x: state.nest.x + Math.cos(angle) * dist,
+        y: state.nest.y + Math.sin(angle) * dist,
+        amount: 200
+      });
+    }
+  }
 
   initPheromoneGrid();
 }
 
-function initWorld() {
-  state.nest.x = state.world.w * 0.5;
-  state.nest.y = state.world.h * 0.55;
-
-  state.foodNodes.length = 0;
-  for (let i = 0; i < 6; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = Math.min(state.world.w, state.world.h) * (0.18 + Math.random() * 0.22);
-    state.foodNodes.push({
-      x: state.nest.x + Math.cos(angle) * dist,
-      y: state.nest.y + Math.sin(angle) * dist,
-      amount: 240
-    });
-  }
-
-  state.camera.x = state.nest.x - state.view.w * 0.5;
-  state.camera.y = state.nest.y - state.view.h * 0.5;
-
-  const maxX = Math.max(0, state.world.w - state.view.w);
-  const maxY = Math.max(0, state.world.h - state.view.h);
-  state.camera.x = Math.max(0, Math.min(state.camera.x, maxX));
-  state.camera.y = Math.max(0, Math.min(state.camera.y, maxY));
-}
-
 function spawnAnts(count = 30) {
   state.ants.length = 0;
+
   for (let i = 0; i < count; i++) {
     state.ants.push({
       x: state.nest.x + (Math.random() - 0.5) * 60 * state.view.dpr,
@@ -104,18 +95,10 @@ function spawnAnts(count = 30) {
   }
 }
 
-window.addEventListener("resize", () => {
-  resize();
-  const maxX = Math.max(0, state.world.w - state.view.w);
-  const maxY = Math.max(0, state.world.h - state.view.h);
-  state.camera.x = Math.max(0, Math.min(state.camera.x, maxX));
-  state.camera.y = Math.max(0, Math.min(state.camera.y, maxY));
-}, { passive: true });
+window.addEventListener("resize", resize, { passive: true });
 
 resize();
-initWorld();
-loadGame(state);
-if (!state.ants || state.ants.length === 0) spawnAnts(30);
+spawnAnts(30);
 
 // Fixed timestep sim
 let last = performance.now();

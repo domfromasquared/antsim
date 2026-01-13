@@ -1,3 +1,4 @@
+// src/main.js
 import { createState } from "./state.js";
 import { stepSim, loadGame } from "./sim.js";
 import { render } from "./render.js";
@@ -10,12 +11,15 @@ const state = createState();
 attachInput(canvas, state);
 
 function initPheromoneGrid() {
-  const cssW = Math.floor(window.innerWidth);
-  const cssH = Math.floor(window.innerHeight);
+  // grid spans WORLD size (in CSS pixels), not screen size
+  const dpr = state.view.dpr || 1;
 
-  const cs = state.pheromone.cellSize;
-  const gw = Math.max(8, Math.floor(cssW / cs));
-  const gh = Math.max(8, Math.floor(cssH / cs));
+  const cs = state.pheromone.cellSize; // CSS px per cell
+  const cssWorldW = Math.floor((state.world.w || state.view.w) / dpr);
+  const cssWorldH = Math.floor((state.world.h || state.view.h) / dpr);
+
+  const gw = Math.max(8, Math.floor(cssWorldW / cs));
+  const gh = Math.max(8, Math.floor(cssWorldH / cs));
 
   state.pheromone.gw = gw;
   state.pheromone.gh = gh;
@@ -50,56 +54,78 @@ function resize() {
   state.view.w = w;
   state.view.h = h;
 
+  // 3x world
+  state.world.w = w * 3;
+  state.world.h = h * 3;
+
+  // keep camera clamped after resize
+  const maxX = Math.max(0, state.world.w - state.view.w);
+  const maxY = Math.max(0, state.world.h - state.view.h);
+  state.camera.x = Math.max(0, Math.min(state.camera.x, maxX));
+  state.camera.y = Math.max(0, Math.min(state.camera.y, maxY));
+
   initPheromoneGrid();
 }
 
 function initWorld() {
-  // Nest in center
-  state.nest.x = state.view.w * 0.5;
-  state.nest.y = state.view.h * 0.55; // slightly lower looks good in portrait
+  // World-space nest
+  state.nest.x = state.world.w * 0.5;
+  state.nest.y = state.world.h * 0.55;
 
-  // Food nodes (in-screen, away from nest)
+  // Food nodes (world-space)
   state.foodNodes.length = 0;
-
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const dist = Math.min(state.view.w, state.view.h) * (0.25 + Math.random() * 0.25);
+    const dist = Math.min(state.world.w, state.world.h) * (0.18 + Math.random() * 0.22);
 
     state.foodNodes.push({
       x: state.nest.x + Math.cos(angle) * dist,
       y: state.nest.y + Math.sin(angle) * dist,
-      amount: 200
+      amount: 240
     });
   }
+
+  // Center camera on nest
+  state.camera.x = state.nest.x - state.view.w * 0.5;
+  state.camera.y = state.nest.y - state.view.h * 0.5;
+
+  const maxX = Math.max(0, state.world.w - state.view.w);
+  const maxY = Math.max(0, state.world.h - state.view.h);
+  state.camera.x = Math.max(0, Math.min(state.camera.x, maxX));
+  state.camera.y = Math.max(0, Math.min(state.camera.y, maxY));
 }
 
 function spawnAnts(count = 30) {
-  // ensure ants array exists (in case createState() doesn’t set it yet)
   if (!state.ants) state.ants = [];
 
-  const cx = state.view.w * 0.5;
-  const cy = state.view.h * 0.5;
-
-  state.ants.length = 0; // reset so we don’t double-spawn on reloads
-
+  state.ants.length = 0;
   for (let i = 0; i < count; i++) {
     state.ants.push({
-  x: cx + (Math.random() - 0.5) * 40,
-  y: cy + (Math.random() - 0.5) * 40,
-  dir: Math.random() * Math.PI * 2,
-  speed: 30 + Math.random() * 20,
-  carrying: false,
-  role: "worker"
+      x: state.nest.x + (Math.random() - 0.5) * 60 * state.view.dpr,
+      y: state.nest.y + (Math.random() - 0.5) * 60 * state.view.dpr,
+      dir: Math.random() * Math.PI * 2,
+      speed: 30 + Math.random() * 20,
+      carrying: false,
+      role: "worker"
     });
   }
 }
 
-window.addEventListener("resize", resize, { passive: true });
+window.addEventListener("resize", () => {
+  resize();
+  // re-center camera slightly toward current nest position if it exists
+  if (state.nest?.x != null) {
+    const maxX = Math.max(0, state.world.w - state.view.w);
+    const maxY = Math.max(0, state.world.h - state.view.h);
+    state.camera.x = Math.max(0, Math.min(state.camera.x, maxX));
+    state.camera.y = Math.max(0, Math.min(state.camera.y, maxY));
+  }
+}, { passive: true });
 
-// IMPORTANT: resize first, then init world, then spawn
+// IMPORTANT: resize first, then init world, then load, then spawn fallback
 resize();
 initWorld();
-loadGame(state);   // NEW (import it)
+loadGame(state);
 if (!state.ants || state.ants.length === 0) spawnAnts(30);
 
 // Fixed timestep sim

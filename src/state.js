@@ -42,6 +42,17 @@ export function createState() {
       threatFall: 14
     },
 
+    tech: {
+  unlocked: {},   // { "scouts": true, ... }
+  purchased: {}   // { "scouts": 1, ... } for multi-level techs later
+},
+
+milestones: {
+  bestWave: 0,
+  totalBiomass: 0,
+  peakAnts: 0
+},
+
     // --- NEW: Brood growth ---
     brood: {
       timer: 0,

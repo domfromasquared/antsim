@@ -2,16 +2,14 @@
 export function attachInput(canvas, state) {
   const toCanvas = (e) => {
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * state.view.dpr;
-    const y = (e.clientY - rect.top) * state.view.dpr;
-    return { x, y };
+    return {
+      x: (e.clientX - rect.left) * state.view.dpr,
+      y: (e.clientY - rect.top) * state.view.dpr
+    };
   };
 
-  // drag bookkeeping
-  let startX = 0;
-  let startY = 0;
-  let lastX = 0;
-  let lastY = 0;
+  let startX = 0, startY = 0;
+  let lastX = 0, lastY = 0;
   let moved = 0;
 
   const clampCamera = () => {
@@ -39,11 +37,16 @@ export function attachInput(canvas, state) {
     state.input.y = p.y;
     updateWorldPointer();
 
-    startX = p.x;
-    startY = p.y;
-    lastX = p.x;
-    lastY = p.y;
+    startX = p.x; startY = p.y;
+    lastX = p.x; lastY = p.y;
     moved = 0;
+
+    // if build mode is active, this down starts ghost dragging immediately
+    if (state.build?.mode) {
+      state.build.dragging = true;
+      state.build.ghostX = state.input.wx;
+      state.build.ghostY = state.input.wy;
+    }
 
     canvas.setPointerCapture?.(e.pointerId);
   };
@@ -53,27 +56,31 @@ export function attachInput(canvas, state) {
     e.preventDefault();
 
     const p = toCanvas(e);
-
-    // pan camera by drag delta (screen-space)
     const dx = p.x - lastX;
     const dy = p.y - lastY;
 
-    state.camera.x -= dx;
-    state.camera.y -= dy;
-    clampCamera();
-
-    lastX = p.x;
-    lastY = p.y;
-
-    // keep pointer updated (screen coords)
     state.input.x = p.x;
     state.input.y = p.y;
     updateWorldPointer();
 
-    // track movement distance for tap detection
     const ddx = p.x - startX;
     const ddy = p.y - startY;
     moved = Math.hypot(ddx, ddy);
+
+    // build drag: move ghost, do NOT pan camera
+    if (state.build?.mode && state.build.dragging) {
+      state.build.ghostX = state.input.wx;
+      state.build.ghostY = state.input.wy;
+    } else {
+      // normal pan
+      state.camera.x -= dx;
+      state.camera.y -= dy;
+      clampCamera();
+      updateWorldPointer();
+    }
+
+    lastX = p.x;
+    lastY = p.y;
   };
 
   const onUp = (e) => {
@@ -82,9 +89,10 @@ export function attachInput(canvas, state) {
     state.input.pointerDown = false;
     state.input.justReleased = true;
 
-    // tap threshold in screen pixels (DPR space)
     const TAP_THRESH = 10 * state.view.dpr;
     state.input.wasTap = moved <= TAP_THRESH;
+
+    if (state.build) state.build.dragging = false;
 
     canvas.releasePointerCapture?.(e.pointerId);
   };

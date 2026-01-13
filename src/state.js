@@ -1,10 +1,26 @@
+// src/state.js
 export function createState() {
   return {
     time: 0,
 
     ui: { food: 0, biomass: 0, threat: 0 },
     view: { w: 0, h: 0, dpr: 1 },
-    input: { pointerDown: false, x: 0, y: 0 },
+
+    // screen-space pointer (canvas px) + world-space pointer (canvas px + camera)
+    input: {
+      pointerDown: false,
+      x: 0,
+      y: 0,
+      wx: 0,
+      wy: 0,
+      justPressed: false,
+      justReleased: false,
+      wasTap: false
+    },
+
+    // 3x world + camera (all in canvas pixels, i.e. DPR space)
+    world: { w: 0, h: 0 },
+    camera: { x: 0, y: 0 },
 
     nest: { x: 0, y: 0, r: 18, hp: 100, maxHp: 100 },
     foodNodes: [],
@@ -23,7 +39,7 @@ export function createState() {
       gw: 0,
       gh: 0,
       imgData: null,
-      cellSize: 12,
+      cellSize: 12, // CSS px per cell
       decayPerSecond: 0.90,
       diffuseRate: 0.22,
 
@@ -33,7 +49,6 @@ export function createState() {
     },
 
     ants: [],
-
     predators: [],
 
     tuning: {
@@ -42,38 +57,28 @@ export function createState() {
       threatFall: 14
     },
 
-    tech: {
-  unlocked: {},   // { "scouts": true, ... }
-  purchased: {}   // { "scouts": 1, ... } for multi-level techs later
-},
-
-milestones: {
-  bestWave: 0,
-  totalBiomass: 0,
-  peakAnts: 0
-},
-
-    // --- NEW: Brood growth ---
     brood: {
       timer: 0,
-      intervalBase: 2.5,   // base hatch interval (sec)
-      cost: 8,             // food per hatch
-      costGrowth: 1.06,    // cost multiplier per hatch
+      intervalBase: 2.5,
+      cost: 8,
+      costGrowth: 1.06,
       maxAnts: 120
     },
 
-    // --- NEW: Upgrades ---
-    upgrades: {
-      brood: 0, // faster hatch
-      dps: 0,   // soldier damage
-      nest: 0   // nest max hp
-    },
+    upgrades: { brood: 0, dps: 0, nest: 0 },
 
-    // --- NEW: UI hitboxes (computed in render, used by sim) ---
+    tech: { unlocked: {}, purchased: {} },
+    buildings: { pylons: 0 },
+
+    milestones: { bestWave: 0, totalBiomass: 0, peakAnts: 0 },
+
+    // UI hitboxes (screen-space, filled in render)
     uiHit: {
       brood: null,
       dps: null,
-      nest: null
+      nest: null,
+      tech_scouts: null,
+      tech_sentry: null
     }
   };
 }

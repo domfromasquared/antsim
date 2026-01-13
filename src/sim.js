@@ -1,28 +1,21 @@
 // src/sim.js
-const SAVE_KEY = "antsim_save_v4";
+const SAVE_KEY = "antsim_save_v5";
 let _saveTimer = 0;
 
 const TECH = {
-  scouts: {
-    name: "Scout Division",
-    costBiomass: 8,
-    req: (s) => (s.wave?.n ?? 0) >= 2
-  },
-  sentry: {
-    name: "Sentry Pylons",
-    costBiomass: 12,
-    req: (s) => (s.milestones?.totalBiomass ?? 0) >= 10
-  }
+  scouts: { name: "Scout Division", costBiomass: 8, req: (s) => (s.wave?.n ?? 0) >= 2 },
+  sentry: { name: "Sentry Pylons", costBiomass: 12, req: (s) => (s.milestones?.totalBiomass ?? 0) >= 10 }
 };
 
-// --- civ building defs ---
+// Civ building defs (lvl affects time + capacity)
 const BUILD = {
-  nursery: { baseCost: 6, time: 1.5, radiusCss: 90, maxAssigned: 6 },
-  hatchery: { baseCost: 10, time: 2.5, radiusCss: 100, maxAssigned: 6 },
-  storehouse: { baseCost: 8, time: 0, radiusCss: 0, maxAssigned: 0 }
+  nursery:    { baseCost: 6,  time: 1.5, radiusCss: 90,  maxAssigned: 6 },
+  hatchery:   { baseCost: 10, time: 2.5, radiusCss: 100, maxAssigned: 6 },
+  storehouse: { baseCost: 8,  time: 0,   radiusCss: 0,   maxAssigned: 0 }
 };
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function dist2(ax, ay, bx, by) { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; }
 
 function diffuseField(front, back, gw, gh, k) {
   for (let y = 0; y < gh; y++) {
@@ -52,6 +45,7 @@ function decayField(arr, decay) {
 function deposit(field, gw, gh, cellSize, dpr, px, py, amount) {
   if (!field) return;
 
+  // px/py are in world (DPR pixels). Convert to CSS pixels for grid mapping.
   const cssX = px / dpr;
   const cssY = py / dpr;
   const cx = Math.floor(cssX / cellSize);
@@ -128,22 +122,6 @@ function sampleWorstDir(field, gw, gh, cellSize, dpr, x, y) {
   return { worstVal, dir: Math.atan2(worstDy, worstDx) };
 }
 
-function nearestPredator(predators, x, y) {
-  let best = null;
-  let bestD2 = Infinity;
-  for (const pr of predators) {
-    if (!pr.active) continue;
-    const dx = pr.x - x;
-    const dy = pr.y - y;
-    const d2 = dx * dx + dy * dy;
-    if (d2 < bestD2) {
-      bestD2 = d2;
-      best = pr;
-    }
-  }
-  return best;
-}
-
 function ensureSystems(state) {
   state.world ??= { w: state.view.w * 3, h: state.view.h * 3 };
   state.camera ??= { x: 0, y: 0 };
@@ -164,6 +142,7 @@ function ensureSystems(state) {
 
   state.milestones ??= { bestWave: 0, totalBiomass: 0, peakAnts: 0 };
   state.uiHit ??= {};
+  if (state.selectedBuildingId === undefined) state.selectedBuildingId = null;
 }
 
 function resetPheromones(state) {
@@ -180,6 +159,17 @@ function applyNestUpgrade(state) {
   const maxHp = 100 + lvl * 40;
   state.nest.maxHp = maxHp;
   state.nest.hp = Math.min(state.nest.hp, maxHp);
+}
+
+function recalcCivPassives(state) {
+  const stores = buildingCount(state, "storehouse");
+  state.ui.maxFood = 200 + stores * 120;
+
+  // efficiency: reduce brood cost growth slightly
+  const eff = 1.06 - stores * 0.005;
+  state.brood.costGrowth = Math.max(1.02, eff);
+
+  state.ui.food = Math.min(state.ui.food ?? 0, state.ui.maxFood ?? 200);
 }
 
 function resetRunState(state) {
@@ -199,10 +189,8 @@ function resetRunState(state) {
   applyNestUpgrade(state);
   state.nest.hp = state.nest.maxHp;
 
-  // keep buildings/tech/upgrades; confirm food cap after storehouses
   recalcCivPassives(state);
 
-  // reset building progress
   for (const b of state.buildings.list) b.progress = 0;
 
   resetPheromones(state);
@@ -240,43 +228,6 @@ function pointInRect(px, py, r) {
   return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
-function upgradeCost(key, level) {
-  if (key === "brood") return Math.floor(3 + level * 3 + level * level * 0.5);
-  if (key === "dps") return Math.floor(4 + level * 4 + level * level * 0.6);
-  if (key === "nest") return Math.floor(5 + level * 5 + level * level * 0.7);
-  return 9999;
-}
-
-function tryPurchaseUpgrade(state, key) {
-  const lvl = state.upgrades[key] ?? 0;
-  const cost = upgradeCost(key, lvl);
-  if ((state.ui.biomass ?? 0) < cost) return false;
-
-  state.ui.biomass -= cost;
-  state.upgrades[key] = lvl + 1;
-  if (key === "nest") applyNestUpgrade(state);
-  return true;
-}
-
-function canBuyTech(state, key) {
-  const t = TECH[key];
-  if (!t) return false;
-  if (state.tech?.unlocked?.[key]) return false;
-  if (!t.req(state)) return false;
-  return (state.ui.biomass ?? 0) >= t.costBiomass;
-}
-
-function buyTech(state, key) {
-  if (!canBuyTech(state, key)) return false;
-
-  const t = TECH[key];
-  state.ui.biomass -= t.costBiomass;
-  state.tech.unlocked[key] = true;
-
-  // legacy: keep sentry tech usable later if you still want pylons; civ v1 focuses buildings
-  return true;
-}
-
 function buildingCount(state, type) {
   let n = 0;
   for (const b of state.buildings.list) if (b.type === type) n++;
@@ -289,8 +240,13 @@ function buildingCost(state, type) {
   return Math.floor(base + n * 2 + n * n * 0.25);
 }
 
+function buildingUpgradeCost(b) {
+  const lvl = b.lvl ?? 1;
+  const base = (b.type === "nursery") ? 8 : (b.type === "hatchery" ? 12 : 10);
+  return Math.floor(base + lvl * 6 + lvl * lvl * 1.8);
+}
+
 function snapWorld(state, wx, wy) {
-  // snap to a coarse grid (CSS 24px) for nicer placement
   const dpr = state.view.dpr;
   const cellCss = 24;
   const cell = cellCss * dpr;
@@ -308,51 +264,62 @@ function placeBuilding(state, type, wx, wy) {
   const x = clamp(s.x, 0, state.world.w);
   const y = clamp(s.y, 0, state.world.h);
 
-  // simple overlap guard
+  // overlap guard
   for (const b of state.buildings.list) {
-    const dx = b.x - x;
-    const dy = b.y - y;
-    if (dx * dx + dy * dy < (40 * state.view.dpr) ** 2) return false;
+    if (dist2(b.x, b.y, x, y) < (40 * state.view.dpr) ** 2) return false;
   }
-  // avoid placing on top of nest
-  {
-    const dx = state.nest.x - x;
-    const dy = state.nest.y - y;
-    if (dx * dx + dy * dy < (60 * state.view.dpr) ** 2) return false;
-  }
+  // avoid placing on nest
+  if (dist2(state.nest.x, state.nest.y, x, y) < (60 * state.view.dpr) ** 2) return false;
 
   state.ui.biomass -= cost;
 
-  state.buildings.list.push({
-    id: state.buildings.nextId++,
-    type,
-    x,
-    y,
-    lvl: 1,
-    progress: 0
-  });
+  const newB = { id: state.buildings.nextId++, type, x, y, lvl: 1, progress: 0 };
+  state.buildings.list.push(newB);
 
+  state.selectedBuildingId = newB.id;
   recalcCivPassives(state);
   return true;
 }
 
-function recalcCivPassives(state) {
-  const stores = buildingCount(state, "storehouse");
-  state.ui.maxFood = 200 + stores * 120;
+function findBuildingById(state, id) {
+  if (id == null) return null;
+  for (const b of state.buildings.list) if (b.id === id) return b;
+  return null;
+}
 
-  // efficiency: slightly reduce brood cost growth
-  const eff = 1.06 - stores * 0.005;
-  state.brood.costGrowth = Math.max(1.02, eff);
+function selectBuildingAt(state, wx, wy) {
+  const dpr = state.view.dpr;
+  const pickR = 18 * dpr;
 
-  // clamp food to max
-  state.ui.food = Math.min(state.ui.food ?? 0, state.ui.maxFood ?? 200);
+  let best = null;
+  let bestD2 = pickR * pickR;
+
+  for (const b of state.buildings.list) {
+    const r = (12 * dpr) + (b.lvl || 1) * 1.5 * dpr + 6 * dpr;
+    const rr = Math.max(pickR, r);
+    const d2 = dist2(b.x, b.y, wx, wy);
+    if (d2 <= rr * rr && d2 <= bestD2) {
+      bestD2 = d2;
+      best = b;
+    }
+  }
+
+  if (!best) {
+    state.selectedBuildingId = null;
+    return null;
+  }
+
+  state.selectedBuildingId = (state.selectedBuildingId === best.id) ? null : best.id;
+  return best;
 }
 
 function countAssignedWorkers(state, b) {
-  // count nearby idle-ish workers (role worker/scout, not carrying, not currently panicking)
   const dpr = state.view.dpr;
   const def = BUILD[b.type];
-  const radius = (def.radiusCss || 0) * dpr;
+  const lvl = b.lvl ?? 1;
+
+  const maxAssigned = def.maxAssigned + Math.floor((lvl - 1) * 1.5);
+  const radius = (def.radiusCss || 0) * dpr * (1 + (lvl - 1) * 0.08);
   if (radius <= 0) return 0;
 
   let count = 0;
@@ -361,21 +328,24 @@ function countAssignedWorkers(state, b) {
     if (role !== "worker" && role !== "scout") continue;
     if (a.carrying) continue;
 
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    if (dx * dx + dy * dy < radius * radius) {
+    if (dist2(a.x, a.y, b.x, b.y) < radius * radius) {
       count++;
-      if (count >= def.maxAssigned) break;
+      if (count >= maxAssigned) break;
     }
   }
   return count;
+}
+
+function buildingSpeedMultiplier(b, assigned) {
+  const lvl = b.lvl ?? 1;
+  const lvlBonus = 1 + (lvl - 1) * 0.22;
+  return lvlBonus * (1 + assigned * 0.6);
 }
 
 function chooseHatchRole(state) {
   const threat = state.ui.threat ?? 0;
   if (threat >= 60) return "soldier";
 
-  // keep some scouts if unlocked
   if (state.tech?.unlocked?.scouts) {
     let scouts = 0;
     for (const a of state.ants) if ((a.role || "worker") === "scout") scouts++;
@@ -503,16 +473,15 @@ export function stepSim(state, dt) {
 
   applyNestUpgrade(state);
 
-  // ---- CIV INPUT: build bar + ghost + release-to-place ----
+  // ---------- UI taps ----------
   if (tapped) {
-    const x = state.input.x;
-    const y = state.input.y;
+    const sx = state.input.x, sy = state.input.y;
     const hit = state.uiHit || {};
 
-    // tap icon toggles mode
-    const tapNursery = pointInRect(x, y, hit.build_nursery);
-    const tapHatchery = pointInRect(x, y, hit.build_hatchery);
-    const tapStore = pointInRect(x, y, hit.build_storehouse);
+    // build bar toggles mode
+    const tapNursery = pointInRect(sx, sy, hit.build_nursery);
+    const tapHatchery = pointInRect(sx, sy, hit.build_hatchery);
+    const tapStore = pointInRect(sx, sy, hit.build_storehouse);
 
     if (tapNursery || tapHatchery || tapStore) {
       const next = tapNursery ? "nursery" : tapHatchery ? "hatchery" : "storehouse";
@@ -522,43 +491,51 @@ export function stepSim(state, dt) {
         state.build.ghostX = state.input.wx;
         state.build.ghostY = state.input.wy;
       }
+    } else if (pointInRect(sx, sy, hit.buildpanel_upgrade)) {
+      const b = findBuildingById(state, state.selectedBuildingId);
+      if (b) {
+        const cost = buildingUpgradeCost(b);
+        if ((state.ui.biomass ?? 0) >= cost) {
+          state.ui.biomass -= cost;
+          b.lvl = (b.lvl ?? 1) + 1;
+          recalcCivPassives(state);
+        }
+      }
+    } else {
+      // world tap selects a building (unless currently placing)
+      if (!state.build?.mode) {
+        selectBuildingAt(state, state.input.wx, state.input.wy);
+      }
     }
   }
 
-  // while dragging, keep ghost snapped-ish (world coords already updated by input.js)
+  // ghost snap while dragging
   if (state.build?.mode && state.build.dragging) {
     const s = snapWorld(state, state.input.wx, state.input.wy);
     state.build.ghostX = s.x;
     state.build.ghostY = s.y;
   }
 
-  // on release: if we were in build mode and the release isn't on UI, attempt place
+  // on release: place building
   if (released && state.build?.mode) {
-    const x = state.input.x;
-    const y = state.input.y;
+    const sx = state.input.x, sy = state.input.y;
     const hit = state.uiHit || {};
-
     const releasedOnUI =
-      pointInRect(x, y, hit.build_nursery) ||
-      pointInRect(x, y, hit.build_hatchery) ||
-      pointInRect(x, y, hit.build_storehouse);
+      pointInRect(sx, sy, hit.build_nursery) ||
+      pointInRect(sx, sy, hit.build_hatchery) ||
+      pointInRect(sx, sy, hit.build_storehouse) ||
+      pointInRect(sx, sy, hit.buildpanel_upgrade);
 
     if (!releasedOnUI) {
-      const ok = placeBuilding(state, state.build.mode, state.build.ghostX, state.build.ghostY);
-      // if placed successfully, stay in mode for fast multi-place; if not, keep mode but do nothing
-      if (ok) {
-        // small QoL: update ghost to current pointer
-        state.build.ghostX = state.input.wx;
-        state.build.ghostY = state.input.wy;
-      }
+      placeBuilding(state, state.build.mode, state.build.ghostX, state.build.ghostY);
+      // stay in build mode for multi-place
     }
   }
 
-  // ---- Brood interval (upgrades + storehouse efficiency already applied in recalcCivPassives) ----
+  // ---------- Natural brood ----------
   const broodLvl = state.upgrades?.brood ?? 0;
   const broodInterval = Math.max(0.9, (state.brood.intervalBase ?? 2.5) - broodLvl * 0.35);
 
-  // natural brood (still useful even with hatchery)
   state.brood.timer += dt;
   if (state.brood.timer >= broodInterval) {
     state.brood.timer = 0;
@@ -581,7 +558,7 @@ export function stepSim(state, dt) {
     }
   }
 
-  // ---- pheromone update ----
+  // ---------- Pheromones ----------
   const decay = Math.pow(p.decayPerSecond ?? 0.92, dt);
   const k = p.diffuseRate ?? 0.22;
 
@@ -600,6 +577,7 @@ export function stepSim(state, dt) {
   const nest = state.nest;
   const foodNodes = state.foodNodes ?? [];
 
+  // bootstrap emitters
   deposit(p.home.values, gw, gh, p.cellSize, dpr, nest.x, nest.y, 7.0);
 
   for (const node of foodNodes) {
@@ -608,12 +586,12 @@ export function stepSim(state, dt) {
     deposit(p.food.values, gw, gh, p.cellSize, dpr, node.x, node.y, strength);
   }
 
-  // touch paint food (world coords)
+  // touch paints FOOD pheromone in world coords
   if (state.input?.pointerDown) {
     deposit(p.food.values, gw, gh, p.cellSize, dpr, state.input.wx, state.input.wy, 4.0);
   }
 
-  // ---- wave manager ----
+  // ---------- Wave manager ----------
   const wave = state.wave;
 
   if (!wave.inProgress) {
@@ -639,12 +617,13 @@ export function stepSim(state, dt) {
   }
   if (wave.bannerTimer > 0) wave.bannerTimer -= dt;
 
-  // ---- predators update ----
+  // ---------- Predators ----------
   let anyPredatorActive = false;
   for (const pr of state.predators) {
     if (!pr.active) continue;
     anyPredatorActive = true;
 
+    // move toward nest
     const dx = nest.x - pr.x;
     const dy = nest.y - pr.y;
     const len = Math.hypot(dx, dy) || 1;
@@ -652,13 +631,12 @@ export function stepSim(state, dt) {
     pr.x += (dx / len) * pr.speed * dt * dpr;
     pr.y += (dy / len) * pr.speed * dt * dpr;
 
+    // danger pheromone emission
     deposit(p.danger.values, gw, gh, p.cellSize, dpr, pr.x, pr.y, pr.emitStrength);
 
-    const ndx = pr.x - nest.x;
-    const ndy = pr.y - nest.y;
+    // damage nest if reached
     const reachR = (nest.r * 1.1) * dpr;
-
-    if (ndx * ndx + ndy * ndy < reachR * reachR) {
+    if (dist2(pr.x, pr.y, nest.x, nest.y) < reachR * reachR) {
       const dps = 18 + wave.n * 1.5;
       nest.hp -= dps * dt;
 
@@ -674,18 +652,19 @@ export function stepSim(state, dt) {
   if (anyPredatorActive) state.ui.threat = Math.min(100, state.ui.threat + state.tuning.threatRise * dt);
   else state.ui.threat = Math.max(0, state.ui.threat - state.tuning.threatFall * dt);
 
-  // ---- CIV PRODUCTION ----
-  // buildings run every tick; assigned workers speed them up
+  // ---------- Civ production ----------
   for (const b of state.buildings.list) {
     const def = BUILD[b.type];
     if (!def) continue;
 
+    const lvl = b.lvl ?? 1;
     const assigned = countAssignedWorkers(state, b);
-    const speed = 1 + assigned * 0.6;
+    const speed = buildingSpeedMultiplier(b, assigned);
 
     if (b.type === "nursery") {
-      // Food -> Larvae
-      b.progress += (dt / def.time) * speed;
+      const t = Math.max(0.6, def.time * Math.pow(0.86, lvl - 1));
+      b.progress += (dt / t) * speed;
+
       while (b.progress >= 1) {
         if ((state.ui.food ?? 0) <= 0) { b.progress = 0.99; break; }
         state.ui.food -= 1;
@@ -693,8 +672,9 @@ export function stepSim(state, dt) {
         b.progress -= 1;
       }
     } else if (b.type === "hatchery") {
-      // Larvae -> Ant
-      b.progress += (dt / def.time) * speed;
+      const t = Math.max(0.9, def.time * Math.pow(0.88, lvl - 1));
+      b.progress += (dt / t) * speed;
+
       while (b.progress >= 1) {
         if ((state.ui.larvae ?? 0) < 2) { b.progress = 0.99; break; }
         if (state.ants.length >= (state.brood.maxAnts ?? 140)) { b.progress = 0.99; break; }
@@ -703,6 +683,7 @@ export function stepSim(state, dt) {
 
         const role = chooseHatchRole(state);
         const baseSpeed = role === "scout" ? (46 + Math.random() * 14) : (30 + Math.random() * 20);
+
         state.ants.push({
           x: b.x + (Math.random() - 0.5) * 24 * dpr,
           y: b.y + (Math.random() - 0.5) * 24 * dpr,
@@ -719,11 +700,21 @@ export function stepSim(state, dt) {
     }
   }
 
-  // ---- soldiers promotion (existing pressure system) ----
+  // ---------- Soldier promotion (FIXED: emergency defenders when predator nears nest) ----------
   const ants = state.ants ?? [];
   const threat01 = (state.ui.threat ?? 0) / 100;
   const frac = Math.min(0.35, state.tuning.soldierFraction ?? 0.22);
-  const desiredSoldiers = Math.floor(ants.length * frac * threat01);
+
+  let desiredSoldiers = Math.floor(ants.length * frac * threat01);
+
+  // EMERGENCY DEFENSE: if any predator is near the nest, force defenders immediately
+  let predatorNearNest = false;
+  const defendR = (nest.r * 6) * dpr;
+  for (const pr of state.predators) {
+    if (!pr.active) continue;
+    if (dist2(pr.x, pr.y, nest.x, nest.y) < defendR * defendR) { predatorNearNest = true; break; }
+  }
+  if (predatorNearNest) desiredSoldiers = Math.max(desiredSoldiers, 5);
 
   let currentSoldiers = 0;
   for (const a of ants) {
@@ -750,32 +741,26 @@ export function stepSim(state, dt) {
     }
   }
 
-  // ---- ant logic ----
+  // ---------- Ant logic ----------
   for (const ant of ants) {
     const role = ant.role || "worker";
 
-    // pickup/dropoff (worker + scout)
+    // forage (worker + scout)
     if (role === "worker" || role === "scout") {
       if (!ant.carrying) {
         for (const node of foodNodes) {
           if (node.amount <= 0) continue;
 
-          const dx = node.x - ant.x;
-          const dy = node.y - ant.y;
           const pickupR = 20 * dpr;
-
-          if (dx * dx + dy * dy < pickupR * pickupR) {
+          if (dist2(node.x, node.y, ant.x, ant.y) < pickupR * pickupR) {
             ant.carrying = true;
             node.amount -= 1;
             break;
           }
         }
       } else {
-        const dx = nest.x - ant.x;
-        const dy = nest.y - ant.y;
         const dropR = (nest.r * 1.25) * dpr;
-
-        if (dx * dx + dy * dy < dropR * dropR) {
+        if (dist2(nest.x, nest.y, ant.x, ant.y) < dropR * dropR) {
           ant.carrying = false;
           state.ui.food = Math.min((state.ui.food ?? 0) + 1, state.ui.maxFood ?? 200);
         }
@@ -785,10 +770,22 @@ export function stepSim(state, dt) {
     const dangerHere = sampleBestDir(p.danger.values, gw, gh, p.cellSize, dpr, ant.x, ant.y).bestVal;
 
     if ((role === "worker" || role === "scout") && dangerHere > 0.02) {
+      // flee danger
       const flee = sampleWorstDir(p.danger.values, gw, gh, p.cellSize, dpr, ant.x, ant.y);
       ant.dir = flee.dir + (Math.random() - 0.5) * 0.2;
     } else if (role === "soldier") {
-      const target = nearestPredator(state.predators, ant.x, ant.y);
+      // SOLDIER AI (FIXED): prioritize predators threatening the nest
+      let target = null;
+      let bestNestD2 = Infinity;
+
+      for (const pr of state.predators) {
+        if (!pr.active) continue;
+        const dn2 = dist2(pr.x, pr.y, nest.x, nest.y);
+        if (dn2 < bestNestD2) {
+          bestNestD2 = dn2;
+          target = pr;
+        }
+      }
 
       if (target) {
         const dx = target.x - ant.x;
@@ -809,20 +806,20 @@ export function stepSim(state, dt) {
           }
         }
 
-        deposit(p.danger.values, gw, gh, p.cellSize, dpr, ant.x, ant.y, 0.35);
+        // reinforce danger field around combat
+        deposit(p.danger.values, gw, gh, p.cellSize, dpr, ant.x, ant.y, 0.45);
       } else {
-        const dx = nest.x - ant.x;
-        const dy = nest.y - ant.y;
-        ant.dir = Math.atan2(dy, dx);
+        // no predator: guard nest
+        ant.dir = Math.atan2(nest.y - ant.y, nest.x - ant.x);
       }
     } else {
-      // trail-following
+      // trail-following (worker/scout when not fleeing)
       const followField = ant.carrying ? p.home.values : p.food.values;
       const depositField = ant.carrying ? p.food.values : p.home.values;
 
       const sampled = sampleBestDir(followField, gw, gh, p.cellSize, dpr, ant.x, ant.y);
-
       const threshold = (role === "scout") ? 0.003 : 0.006;
+
       if (sampled.bestVal > threshold) ant.dir = sampled.dir;
       else ant.dir += (Math.random() - 0.5) * 0.35;
 

@@ -13,7 +13,7 @@ function getTmpCtx(w, h) {
   return _tmpCtx;
 }
 
-// Draw heatmap in SCREEN coords by sampling the WORLD grid window under the camera
+// Heatmap drawn in SCREEN coords by sampling camera window from WORLD grid
 function drawHeatmap(ctx, state) {
   const p = state.pheromone;
   if (!p || !p.imgData) return;
@@ -45,10 +45,9 @@ function drawHeatmap(ctx, state) {
 
     const idx = i * 4;
 
-    // stronger food (green), visible danger (red), softer home (blue)
     const dBoost = Math.min(1, d * 2.2);
     const fBoost = Math.min(1, f * 3.0);
-    const hBoost = Math.min(1, h * 1.2);
+    const hBoost = Math.min(1, h * 1.15);
 
     data[idx + 0] = Math.floor(dBoost * 255);
     data[idx + 1] = Math.floor(fBoost * 255);
@@ -61,8 +60,7 @@ function drawHeatmap(ctx, state) {
   const tctx = getTmpCtx(gw, gh);
   tctx.putImageData(p.imgData, 0, 0);
 
-  // Map camera window (world px) -> grid px
-  const scale = (p.cellSize || 12) * state.view.dpr; // world px per grid cell
+  const scale = (p.cellSize || 12) * state.view.dpr;
   const sx = (state.camera.x || 0) / scale;
   const sy = (state.camera.y || 0) / scale;
   const sw = state.view.w / scale;
@@ -78,52 +76,75 @@ function drawHeatmap(ctx, state) {
 function drawNestAndFood(ctx, state) {
   const dpr = state.view.dpr;
 
-  if (state.nest) {
-    const r = (state.nest.r ?? 18) * dpr;
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
+  const r = (state.nest.r ?? 18) * dpr;
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.beginPath();
+  ctx.arc(state.nest.x, state.nest.y, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (const node of state.foodNodes) {
+    if (node.amount <= 0) continue;
+    const rr = 10 * dpr;
+    ctx.fillStyle = "rgba(120,255,120,0.30)";
     ctx.beginPath();
-    ctx.arc(state.nest.x, state.nest.y, r, 0, Math.PI * 2);
+    ctx.arc(node.x, node.y, rr, 0, Math.PI * 2);
     ctx.fill();
-  }
-
-  if (Array.isArray(state.foodNodes)) {
-    for (const node of state.foodNodes) {
-      if (!node) continue;
-      if (typeof node.amount === "number" && node.amount <= 0) continue;
-
-      const rr = 10 * dpr;
-      ctx.fillStyle = "rgba(120,255,120,0.30)";
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, rr, 0, Math.PI * 2);
-      ctx.fill();
-    }
   }
 }
 
-function drawPylons(ctx, state) {
-  const pylons = state.buildings?.pylons ?? 0;
-  if (!state.nest || pylons <= 0) return;
+function drawBuildings(ctx, state) {
+  const dpr = state.view.dpr;
+  const list = state.buildings?.list ?? [];
+
+  for (const b of list) {
+    const r = 12 * dpr + (b.lvl || 1) * 1.5 * dpr;
+
+    if (b.type === "nursery") ctx.fillStyle = "rgba(120,255,160,0.55)";
+    else if (b.type === "hatchery") ctx.fillStyle = "rgba(255,255,255,0.45)";
+    else if (b.type === "storehouse") ctx.fillStyle = "rgba(255,220,120,0.50)";
+    else ctx.fillStyle = "rgba(200,200,200,0.35)";
+
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // progress ring (subtle)
+    const prog = Math.max(0, Math.min(1, (b.progress || 0)));
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 2 * dpr;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, r + 4 * dpr, -Math.PI * 0.5, -Math.PI * 0.5 + prog * Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function drawGhostBuilding(ctx, state) {
+  if (!state.build?.mode) return;
 
   const dpr = state.view.dpr;
-  const ringR = (state.nest.r + 32) * dpr;
+  const type = state.build.mode;
+  const r = 14 * dpr;
 
-  for (let i = 0; i < pylons; i++) {
-    const ang = (i / pylons) * Math.PI * 2;
-    const x = state.nest.x + Math.cos(ang) * ringR;
-    const y = state.nest.y + Math.sin(ang) * ringR;
+  let color = "rgba(255,255,255,0.18)";
+  if (type === "nursery") color = "rgba(120,255,160,0.22)";
+  if (type === "hatchery") color = "rgba(255,255,255,0.22)";
+  if (type === "storehouse") color = "rgba(255,220,120,0.22)";
 
-    ctx.fillStyle = "rgba(180,220,255,0.85)";
-    ctx.beginPath();
-    ctx.arc(x, y, 3.2 * dpr, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(state.build.ghostX, state.build.ghostY, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.lineWidth = 2 * dpr;
+  ctx.beginPath();
+  ctx.arc(state.build.ghostX, state.build.ghostY, r, 0, Math.PI * 2);
+  ctx.stroke();
 }
 
 function drawPredators(ctx, state) {
-  const predators = Array.isArray(state.predators) ? state.predators : [];
   const dpr = state.view.dpr;
-
-  for (const pr of predators) {
+  for (const pr of state.predators) {
     if (!pr.active) continue;
 
     const r = 10 * dpr;
@@ -146,9 +167,7 @@ function drawPredators(ctx, state) {
 }
 
 function drawAnts(ctx, state) {
-  if (!Array.isArray(state.ants)) return;
   const dpr = state.view.dpr;
-
   for (const ant of state.ants) {
     const role = ant.role || "worker";
     const carrying = !!ant.carrying;
@@ -165,11 +184,7 @@ function drawAnts(ctx, state) {
 
 function drawNestHp(ctx, state) {
   const nest = state.nest;
-  if (!nest) return;
-
-  const hp = nest.hp ?? 0;
-  const maxHp = nest.maxHp ?? 100;
-  const hp01 = Math.max(0, Math.min(1, hp / maxHp));
+  const hp01 = Math.max(0, Math.min(1, (nest.hp ?? 0) / (nest.maxHp ?? 100)));
 
   const dpr = state.view.dpr;
   const w = 120 * dpr;
@@ -186,9 +201,8 @@ function drawNestHp(ctx, state) {
 
 function drawWaveUi(ctx, state) {
   const wave = state.wave;
-  if (!wave) return;
-
   const dpr = state.view.dpr;
+
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
@@ -206,169 +220,84 @@ function drawWaveUi(ctx, state) {
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.fillText(`WAVE ${wave.n}`, state.view.w * 0.5, state.view.h * 0.12);
   }
-
   ctx.restore();
 }
 
-function upgradeCost(key, level) {
-  if (key === "brood") return Math.floor(3 + level * 3 + level * level * 0.5);
-  if (key === "dps") return Math.floor(4 + level * 4 + level * level * 0.6);
-  if (key === "nest") return Math.floor(5 + level * 5 + level * level * 0.7);
-  return 9999;
-}
-
-function drawUpgradeChips(ctx, state) {
+function drawTopStats(ctx, state) {
   const dpr = state.view.dpr;
-  const pad = 10 * dpr;
-  const chipW = 118 * dpr;
-  const chipH = 36 * dpr;
-  const gap = 8 * dpr;
-
-  const x = state.view.w - pad - chipW;
-  let y = pad;
-
-  ctx.save();
-  ctx.textAlign = "right";
-  ctx.textBaseline = "top";
-  ctx.font = `${13 * dpr}px system-ui`;
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
-  ctx.fillText(`BIOMASS ${state.ui.biomass ?? 0}`, state.view.w - pad, y);
-  y += 18 * dpr;
-  ctx.restore();
-
-  const upgrades = state.upgrades ?? { brood: 0, dps: 0, nest: 0 };
-
-  const chips = [
-    { key: "brood", label: "BROOD", lvl: upgrades.brood ?? 0 },
-    { key: "dps", label: "DPS", lvl: upgrades.dps ?? 0 },
-    { key: "nest", label: "NEST", lvl: upgrades.nest ?? 0 }
-  ];
-
-  state.uiHit ??= {};
-  for (const c of chips) {
-    const cost = upgradeCost(c.key, c.lvl);
-    state.uiHit[c.key] = { x, y, w: chipW, h: chipH };
-
-    ctx.fillStyle = "rgba(255,255,255,0.10)";
-    ctx.fillRect(x, y, chipW, chipH);
-
-    ctx.fillStyle = "rgba(255,255,255,0.90)";
-    ctx.font = `${12 * dpr}px system-ui`;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    ctx.fillText(`${c.label} L${c.lvl + 1}`, x + 10 * dpr, y + 7 * dpr);
-
-    const canBuy = (state.ui.biomass ?? 0) >= cost;
-    ctx.fillStyle = canBuy ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.35)";
-    ctx.font = `${11 * dpr}px system-ui`;
-    ctx.fillText(`COST ${cost}`, x + 10 * dpr, y + 20 * dpr);
-
-    y += chipH + gap;
-  }
-
-  return y;
-}
-
-function drawTechCards(ctx, state) {
-  const dpr = state.view.dpr;
-  const pad = 10 * dpr;
-  const cardW = 240 * dpr;
-  const cardH = 56 * dpr;
-  const gap = 8 * dpr;
-
-  const x = pad;
-  let y = pad;
-
-  const tech = state.tech ?? { unlocked: {} };
-  const m = state.milestones ?? { totalBiomass: 0 };
-  const waveN = state.wave?.n ?? 0;
-
-  const cards = [
-    {
-      key: "scouts",
-      title: "Scout Division",
-      desc: "Unlock scout ants (faster food finding).",
-      cost: 8,
-      unlocked: !!tech.unlocked?.scouts,
-      available: waveN >= 2
-    },
-    {
-      key: "sentry",
-      title: "Sentry Pylons",
-      desc: "Add 1 nest pylon (zaps predators).",
-      cost: 12,
-      unlocked: !!tech.unlocked?.sentry,
-      available: (m.totalBiomass ?? 0) >= 10
-    }
-  ];
-
   ctx.save();
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
   ctx.font = `${13 * dpr}px system-ui`;
-  ctx.fillStyle = "rgba(255,255,255,0.75)";
-  ctx.fillText("TECH", x, y);
-  y += 18 * dpr;
-  ctx.restore();
-
-  for (const c of cards) {
-    const hitKey = c.key === "scouts" ? "tech_scouts" : "tech_sentry";
-    state.uiHit[hitKey] = { x, y, w: cardW, h: cardH };
-
-    let bg = "rgba(255,255,255,0.08)";
-    if (c.unlocked) bg = "rgba(120,255,180,0.10)";
-    else if (c.available) bg = "rgba(255,255,255,0.12)";
-
-    ctx.fillStyle = bg;
-    ctx.fillRect(x, y, cardW, cardH);
-
-    ctx.save();
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-
-    ctx.font = `${13 * dpr}px system-ui`;
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.fillText(c.title, x + 10 * dpr, y + 7 * dpr);
-
-    ctx.font = `${11 * dpr}px system-ui`;
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.fillText(c.desc, x + 10 * dpr, y + 24 * dpr);
-
-    let rightText = "";
-    if (c.unlocked) rightText = "OWNED";
-    else if (!c.available) rightText = c.key === "scouts" ? "REQ: WAVE 2" : "REQ: TOTAL BIOMASS 10";
-    else rightText = `BUY ${c.cost}`;
-
-    const canBuy = c.available && !c.unlocked && (state.ui.biomass ?? 0) >= c.cost;
-    ctx.textAlign = "right";
-    ctx.fillStyle = c.unlocked
-      ? "rgba(120,255,180,0.9)"
-      : (canBuy ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.45)");
-
-    ctx.font = `${12 * dpr}px system-ui`;
-    ctx.fillText(rightText, x + cardW - 10 * dpr, y + 17 * dpr);
-
-    ctx.restore();
-
-    y += cardH + gap;
-  }
-}
-
-function drawMilestones(ctx, state) {
-  const dpr = state.view.dpr;
-  const m = state.milestones ?? { bestWave: 0, totalBiomass: 0, peakAnts: 0 };
-
-  ctx.save();
-  ctx.textAlign = "left";
-  ctx.textBaseline = "bottom";
-  ctx.font = `${12 * dpr}px system-ui`;
-  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.fillStyle = "rgba(255,255,255,0.80)";
   ctx.fillText(
-    `BEST WAVE ${m.bestWave}  •  TOTAL BIOMASS ${m.totalBiomass}  •  PEAK ANTS ${m.peakAnts}`,
+    `FOOD ${state.ui.food}/${state.ui.maxFood}  •  LARVAE ${state.ui.larvae}  •  BIOMASS ${state.ui.biomass}  •  POP ${state.ants.length}`,
     10 * dpr,
-    state.view.h - 10 * dpr
+    10 * dpr
   );
   ctx.restore();
+}
+
+function drawBuildBar(ctx, state) {
+  const dpr = state.view.dpr;
+
+  const barH = 64 * dpr;
+  const pad = 10 * dpr;
+  const y = state.view.h - barH - pad;
+  const w = state.view.w - pad * 2;
+
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(pad, y, w, barH);
+
+  const btnW = (w - pad * 2) / 3;
+  const btnH = barH - pad * 2;
+  const by = y + pad;
+  const labels = [
+    { key: "build_nursery", name: "NURSERY", cost: "6" },
+    { key: "build_hatchery", name: "HATCHERY", cost: "10" },
+    { key: "build_storehouse", name: "STORE", cost: "8" }
+  ];
+
+  state.uiHit.build_nursery = { x: pad + pad + 0 * btnW, y: by, w: btnW - pad, h: btnH };
+  state.uiHit.build_hatchery = { x: pad + pad + 1 * btnW, y: by, w: btnW - pad, h: btnH };
+  state.uiHit.build_storehouse = { x: pad + pad + 2 * btnW, y: by, w: btnW - pad, h: btnH };
+
+  for (let i = 0; i < 3; i++) {
+    const rect = labels[i].key === "build_nursery" ? state.uiHit.build_nursery
+      : labels[i].key === "build_hatchery" ? state.uiHit.build_hatchery
+      : state.uiHit.build_storehouse;
+
+    const active =
+      (state.build?.mode === "nursery" && labels[i].key === "build_nursery") ||
+      (state.build?.mode === "hatchery" && labels[i].key === "build_hatchery") ||
+      (state.build?.mode === "storehouse" && labels[i].key === "build_storehouse");
+
+    ctx.fillStyle = active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.10)";
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `${12 * dpr}px system-ui`;
+    ctx.fillStyle = "rgba(255,255,255,0.90)";
+    ctx.fillText(labels[i].name, rect.x + rect.w * 0.5, rect.y + rect.h * 0.42);
+
+    ctx.font = `${11 * dpr}px system-ui`;
+    ctx.fillStyle = "rgba(255,255,255,0.60)";
+    ctx.fillText(`COST ${labels[i].cost}`, rect.x + rect.w * 0.5, rect.y + rect.h * 0.72);
+    ctx.restore();
+  }
+
+  // hint while placing
+  if (state.build?.mode) {
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.font = `${13 * dpr}px system-ui`;
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillText("Drag to position • Release to place • Tap icon to cancel", state.view.w * 0.5, y - 8 * dpr);
+    ctx.restore();
+  }
 }
 
 function drawGameOver(ctx, state) {
@@ -382,14 +311,12 @@ function drawGameOver(ctx, state) {
   ctx.fillStyle = "rgba(255,255,255,0.95)";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-
   ctx.font = `${22 * dpr}px system-ui`;
   ctx.fillText(state.game.message || "Game Over", state.view.w * 0.5, state.view.h * 0.45);
 
   ctx.font = `${14 * dpr}px system-ui`;
   ctx.fillStyle = "rgba(255,255,255,0.80)";
   ctx.fillText("Tap to Restart", state.view.w * 0.5, state.view.h * 0.52);
-
   ctx.restore();
 }
 
@@ -402,28 +329,20 @@ export function render(ctx, state) {
   // heatmap in screen coords (camera window)
   drawHeatmap(ctx, state);
 
-  // world objects
+  // world objects (translated)
   ctx.save();
   ctx.translate(-(state.camera.x || 0), -(state.camera.y || 0));
   drawNestAndFood(ctx, state);
-  drawPylons(ctx, state);
+  drawBuildings(ctx, state);
   drawPredators(ctx, state);
   drawAnts(ctx, state);
+  drawGhostBuilding(ctx, state);
   ctx.restore();
 
   // UI
+  drawTopStats(ctx, state);
   drawNestHp(ctx, state);
   drawWaveUi(ctx, state);
-  drawUpgradeChips(ctx, state);
-  drawTechCards(ctx, state);
-  drawMilestones(ctx, state);
+  drawBuildBar(ctx, state);
   drawGameOver(ctx, state);
-
-  // pointer indicator (screen coords)
-  if (state.input?.pointerDown) {
-    ctx.fillStyle = "rgba(255,255,255,0.20)";
-    ctx.beginPath();
-    ctx.arc(state.input.x, state.input.y, 16 * state.view.dpr, 0, Math.PI * 2);
-    ctx.fill();
-  }
 }

@@ -8,9 +8,14 @@ export function attachInput(canvas, state) {
     };
   };
 
+  // Ensure command object exists
+  state.command ??= { mode: "none", clear: false };
+
   let startX = 0, startY = 0;
   let lastX = 0, lastY = 0;
   let moved = 0;
+
+  let lastTapAt = 0;
 
   const clampCamera = () => {
     const maxX = Math.max(0, (state.world.w || state.view.w) - state.view.w);
@@ -24,29 +29,45 @@ export function attachInput(canvas, state) {
     state.input.wy = state.input.y + (state.camera?.y ?? 0);
   };
 
+  const commandButtonRect = () => {
+    // Top-right “mode” button in SCREEN (canvas) coords
+    const dpr = state.view.dpr || 1;
+    const w = state.view.w || canvas.width;
+    const pad = 10 * dpr;
+    const bw = 150 * dpr;
+    const bh = 34 * dpr;
+    return { x: w - pad - bw, y: pad, w: bw, h: bh };
+  };
+
+  const inRect = (px, py, r) => {
+    return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  };
+
+  const cycleCommandMode = () => {
+    const m = state.command?.mode || "none";
+    const next =
+      (m === "none") ? "rally" :
+      (m === "rally") ? "harvest" :
+      (m === "harvest") ? "avoid" :
+      "none";
+    state.command.mode = next;
+  };
+
   const onDown = (e) => {
     e.preventDefault();
     const p = toCanvas(e);
 
     state.input.pointerDown = true;
     state.input.justPressed = true;
-    state.input.justReleased = false;
-    state.input.wasTap = false;
-
     state.input.x = p.x;
     state.input.y = p.y;
     updateWorldPointer();
 
-    startX = p.x; startY = p.y;
-    lastX = p.x; lastY = p.y;
+    startX = lastX = p.x;
+    startY = lastY = p.y;
     moved = 0;
 
-    // if build mode is active, this down starts ghost dragging immediately
-    if (state.build?.mode) {
-      state.build.dragging = true;
-      state.build.ghostX = state.input.wx;
-      state.build.ghostY = state.input.wy;
-    }
+    if (state.build?.mode) state.build.dragging = true;
 
     canvas.setPointerCapture?.(e.pointerId);
   };
@@ -56,6 +77,7 @@ export function attachInput(canvas, state) {
     e.preventDefault();
 
     const p = toCanvas(e);
+
     const dx = p.x - lastX;
     const dy = p.y - lastY;
 
@@ -67,12 +89,12 @@ export function attachInput(canvas, state) {
     const ddy = p.y - startY;
     moved = Math.hypot(ddx, ddy);
 
-    // build drag: move ghost, do NOT pan camera
     if (state.build?.mode && state.build.dragging) {
       state.build.ghostX = state.input.wx;
       state.build.ghostY = state.input.wy;
+    } else if (state.command?.mode && state.command.mode !== "none") {
+      // Command paint mode: do NOT pan camera (drag paints in sim)
     } else {
-      // normal pan
       state.camera.x -= dx;
       state.camera.y -= dy;
       clampCamera();
@@ -91,6 +113,23 @@ export function attachInput(canvas, state) {
 
     const TAP_THRESH = 10 * state.view.dpr;
     state.input.wasTap = moved <= TAP_THRESH;
+
+    // Tap on command button cycles command mode; double-tap clears command field.
+    if (state.input.wasTap) {
+      const r = commandButtonRect();
+      if (inRect(state.input.x, state.input.y, r)) {
+        const now = performance.now();
+        if (now - lastTapAt < 320) {
+          state.command.clear = true;
+        } else {
+          cycleCommandMode();
+        }
+        lastTapAt = now;
+
+        // Prevent sim from treating this as a world tap
+        state.input.wasTap = false;
+      }
+    }
 
     if (state.build) state.build.dragging = false;
 

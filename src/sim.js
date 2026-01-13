@@ -105,6 +105,21 @@ function sampleWorstDir(field, gw, gh, cellSize, dpr, x, y) {
   return { worstVal, dir: Math.atan2(worstDy, worstDx) };
 }
 
+const TECH = {
+  scouts: {
+    name: "Scout Division",
+    desc: "Unlock scout ants (faster + better food sensing).",
+    costBiomass: 8,
+    req: (s) => (s.wave?.n ?? 0) >= 2
+  },
+  sentry: {
+    name: "Sentry Pylons",
+    desc: "Build 1 nest pylon that zaps predators.",
+    costBiomass: 12,
+    req: (s) => (s.milestones?.totalBiomass ?? 0) >= 10
+  }
+};
+
 function nearestPredator(predators, x, y) {
   let best = null;
   let bestD2 = Infinity;
@@ -170,6 +185,31 @@ function resetGame(state) {
   state.nest.hp = state.nest.maxHp;
 
   resetPheromones(state);
+}
+
+function canBuyTech(state, key) {
+  const t = TECH[key];
+  if (!t) return false;
+  if (state.tech?.unlocked?.[key]) return false;
+  if (!t.req(state)) return false;
+  return (state.ui.biomass ?? 0) >= t.costBiomass;
+}
+
+function buyTech(state, key) {
+  if (!canBuyTech(state, key)) return false;
+  const t = TECH[key];
+  state.ui.biomass -= t.costBiomass;
+  state.tech.unlocked[key] = true;
+
+  // apply immediate effects
+  if (key === "scouts") {
+    // no immediate; affects spawn role availability
+  }
+  if (key === "sentry") {
+    state.buildings ??= { pylons: 0 };
+    state.buildings.pylons += 1;
+  }
+  return true;
 }
 
 function waveStats(waveN) {
@@ -309,6 +349,12 @@ export function stepSim(state, dt) {
     return;
   }
 
+  // milestones update
+state.milestones ??= { bestWave: 0, totalBiomass: 0, peakAnts: 0 };
+state.milestones.bestWave = Math.max(state.milestones.bestWave, state.wave?.n ?? 0);
+state.milestones.peakAnts = Math.max(state.milestones.peakAnts, state.ants?.length ?? 0);
+  state.milestones.totalBiomass += 1;
+  
   state.time += dt;
 
   const p = state.pheromone;

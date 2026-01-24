@@ -1,1 +1,471 @@
-uihfc
+/* style.css (fixed for iPhone Chrome “fits screen”, stable viewport, safer touch + hit-testing) */
+:root{
+  --bg0:#060710;
+  --bg1:#0a0d1f;
+
+  --text: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.72);
+  --muted2: rgba(255,255,255,.60);
+
+  --good: #2de3a6;
+  --warn: #ffcc00;
+
+  /* JS clamps --tile so the whole board fits */
+  --tile: 44px;
+  --gap: 8px;
+  --radius: 14px;
+  --board-pad: 14px;
+
+  --shadow: 0 14px 40px rgba(0,0,0,.55);
+  --shadow2: 0 8px 18px rgba(0,0,0,.45);
+
+  --ring: 0 0 0 2px rgba(255,255,255,.35), 0 0 0 6px rgba(130,180,255,.18), 0 0 18px rgba(150,210,255,.20);
+  --hintRing: 0 0 0 2px rgba(255,255,255,.30), 0 0 0 8px rgba(255,230,120,.16), 0 0 18px rgba(255,230,120,.28);
+}
+
+*{ box-sizing:border-box; }
+
+html{
+  height:100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body{
+  margin:0;
+  height:100%;
+  /* Dynamic viewport units = much more stable on iOS Chrome when URL bar expands/collapses */
+  min-height: 100vh;
+  min-height: 100dvh;
+  background:
+    radial-gradient(1000px 800px at 50% -20%, rgba(120,160,255,.25), transparent 55%),
+    radial-gradient(900px 900px at 10% 20%, rgba(255,80,140,.15), transparent 55%),
+    radial-gradient(900px 900px at 90% 40%, rgba(50,235,180,.12), transparent 60%),
+    linear-gradient(180deg, var(--bg1), var(--bg0) 60%, #05050c);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+  overflow:hidden; /* absolutely no scrolling */
+  touch-action: manipulation;
+}
+
+/* Full-screen app container that respects safe areas */
+.app{
+  height: 100vh;
+  height: 100dvh;
+  width:100%;
+  display:flex;
+  align-items:stretch;
+  justify-content:center;
+  padding:
+    max(env(safe-area-inset-top), 10px)
+    12px
+    max(env(safe-area-inset-bottom), 10px)
+    12px;
+}
+
+/* Stable portrait frame */
+.frame{
+  width:min(420px, 96vw);
+  height: 100%;
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  min-height: 0; /* critical so children can shrink instead of forcing overflow */
+}
+
+/* --- Header / Text --- */
+header{
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.05));
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: var(--shadow2);
+  border-radius: 18px;
+  padding: 12px 12px 10px;
+  backdrop-filter: blur(10px);
+  min-height: 0;
+}
+
+h1{
+  font-size: 18px;
+  margin:0 0 8px 0;
+  letter-spacing:.2px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  line-height:1.15;
+  flex-wrap:wrap;
+}
+
+.badge{
+  font-size: 12px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.14);
+  color: rgba(255,255,255,.88);
+  white-space:nowrap;
+}
+
+.reasoning{
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 8px 0;
+  line-height:1.35;
+}
+
+.rulesTitle{
+  font-size: 13px;
+  margin:0;
+  color: rgba(255,255,255,.88);
+}
+
+ul.rules{
+  margin: 6px 0 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height:1.25;
+}
+ul.rules li{ margin: 4px 0; }
+
+/* --- HUD / Controls --- */
+.hud{
+  display:flex;
+  gap: 10px;
+  align-items:stretch;
+  justify-content:space-between;
+  min-height: 0;
+}
+
+.pill{
+  flex: 1;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.05));
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: var(--shadow2);
+  backdrop-filter: blur(10px);
+  min-width:0;
+}
+.pill strong{ font-size: 14px; letter-spacing:.2px; }
+.pill .val{
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  color: rgba(255,255,255,.92);
+  white-space:nowrap;
+}
+
+.controls{
+  display:flex;
+  gap: 10px;
+  align-items:center;
+  justify-content:space-between;
+  min-height: 0;
+}
+
+button{
+  appearance:none;
+  border:0;
+  cursor:pointer;
+  user-select:none;
+  -webkit-tap-highlight-color: transparent;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-weight: 650;
+  letter-spacing:.2px;
+  color: rgba(255,255,255,.92);
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.06));
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: var(--shadow2);
+  transition: transform .06s ease, filter .06s ease;
+  flex: 1;
+  min-width:0;
+  touch-action: manipulation;
+}
+button:active{ transform: translateY(1px) scale(.99); filter: brightness(1.08); }
+button.secondary{ background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.05)); }
+button.good{
+  background: linear-gradient(180deg, rgba(45,227,166,.28), rgba(45,227,166,.10));
+  border-color: rgba(45,227,166,.35);
+}
+button.warn{
+  background: linear-gradient(180deg, rgba(255,204,0,.24), rgba(255,204,0,.08));
+  border-color: rgba(255,204,0,.32);
+}
+
+.subnote{
+  margin: 0;
+  text-align:center;
+  font-size: 12px;
+  color: var(--muted2);
+  min-height: 0;
+}
+
+/* --- Board Card (fills remaining height) --- */
+.boardCard{
+  flex: 1;
+  min-height: 0; /* critical: allows it to shrink to fit the viewport */
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: var(--shadow);
+  border-radius: 22px;
+  padding: 12px;
+  position:relative;
+  overflow:hidden;
+  backdrop-filter: blur(10px);
+}
+
+.boardGlow{
+  position:absolute;
+  inset:-40px;
+  background:
+    radial-gradient(400px 320px at 30% 20%, rgba(120,160,255,.20), transparent 60%),
+    radial-gradient(380px 360px at 70% 80%, rgba(255,80,140,.14), transparent 58%),
+    radial-gradient(420px 380px at 80% 25%, rgba(50,235,180,.12), transparent 58%);
+  pointer-events:none;
+  filter: blur(12px);
+  opacity:.9;
+}
+
+/* Wrap is full available height; prevents scroll and supports pointer capture */
+.boardWrap{
+  position:relative;
+  width: 100%;
+  height: 100%;
+  min-height:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  touch-action: none;
+}
+
+/* Board sized by CSS vars; JS sets --tile to fit boardWrap */
+.board{
+  position:relative;
+  width: calc(var(--tile) * 8 + var(--gap) * 7 + var(--board-pad) * 2);
+  height: calc(var(--tile) * 8 + var(--gap) * 7 + var(--board-pad) * 2);
+  padding: var(--board-pad);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(0,0,0,.28), rgba(0,0,0,.12));
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.05), inset 0 0 40px rgba(0,0,0,.35);
+  display:grid;
+  grid-template-columns: repeat(8, var(--tile));
+  grid-template-rows: repeat(8, var(--tile));
+  gap: var(--gap);
+  touch-action: none;
+}
+
+/* --- Tiles --- */
+.tile{
+  width: var(--tile);
+  height: var(--tile);
+  border-radius: var(--radius);
+  position:relative;
+  transform: translate3d(0,0,0);
+  transition: transform 140ms ease;
+  will-change: transform, opacity, filter;
+  box-shadow: 0 10px 20px rgba(0,0,0,.35);
+  outline:none;
+}
+
+.tile::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius: var(--radius);
+  background:
+    radial-gradient(18px 18px at 30% 25%, rgba(255,255,255,.55), transparent 55%),
+    radial-gradient(28px 20px at 70% 80%, rgba(0,0,0,.25), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0) 55%, rgba(0,0,0,.18));
+  pointer-events:none;
+  /* Avoid blend-mode cost on mobile; looks consistent + faster */
+  opacity: .95;
+}
+
+.tile::after{
+  content:"";
+  position:absolute;
+  inset: -1px;
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.10);
+  pointer-events:none;
+}
+
+.tile.selected{
+  box-shadow: var(--shadow2), var(--ring);
+  transform: translate3d(0,-2px,0) scale(1.03);
+  z-index: 5;
+}
+
+.tile.hint{
+  box-shadow: var(--shadow2), var(--hintRing);
+  z-index: 4;
+  animation: hintPulse 900ms ease-in-out infinite;
+}
+
+@keyframes hintPulse{
+  0%,100%{ transform: translate3d(0,0,0) scale(1.00); filter: brightness(1.0); }
+  50%{ transform: translate3d(0,-1px,0) scale(1.03); filter: brightness(1.12); }
+}
+
+.tile.clearing{
+  animation: pop 180ms ease-out forwards;
+}
+@keyframes pop{
+  from{ transform: scale(1); opacity:1; }
+  to{ transform: scale(.75); opacity:0; }
+}
+
+/* Special overlay layer */
+.tile .mark{
+  position:absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  pointer-events:none;
+  opacity: .95;
+}
+
+/* --- Specials --- */
+.tile.striped-h .mark{
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(255,255,255,.55) 0px,
+      rgba(255,255,255,.55) 6px,
+      rgba(255,255,255,0) 6px,
+      rgba(255,255,255,0) 12px);
+}
+
+.tile.striped-v .mark{
+  background:
+    repeating-linear-gradient(0deg,
+      rgba(255,255,255,.55) 0px,
+      rgba(255,255,255,.55) 6px,
+      rgba(255,255,255,0) 6px,
+      rgba(255,255,255,0) 12px);
+}
+
+.tile.wrapped .mark{
+  background:
+    radial-gradient(18px 18px at 30% 30%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(26px 26px at 70% 70%, rgba(255,255,255,.35), transparent 62%),
+    radial-gradient(closest-side, rgba(255,255,255,.18), transparent 68%);
+}
+
+.tile.bomb .mark{
+  background:
+    radial-gradient(circle at 50% 45%, rgba(255,255,255,.85) 0 10%, rgba(255,255,255,.12) 28%, transparent 58%),
+    radial-gradient(circle at 50% 55%, rgba(0,0,0,.35) 0 18%, transparent 55%);
+}
+
+/* Cargo objective piece */
+.tile.cargo{
+  border-radius: 18px;
+  box-shadow: 0 14px 26px rgba(0,0,0,.45), 0 0 18px rgba(255,230,120,.22);
+}
+.tile.cargo::before{
+  border-radius: 18px;
+  background:
+    radial-gradient(22px 22px at 30% 25%, rgba(255,255,255,.65), transparent 58%),
+    radial-gradient(32px 24px at 70% 80%, rgba(0,0,0,.30), transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,0) 55%, rgba(0,0,0,.20));
+}
+.tile.cargo::after{ border-radius: 18px; }
+.tile.cargo .mark{
+  border-radius: 18px;
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(255,255,255,.35) 0px,
+      rgba(255,255,255,.35) 8px,
+      rgba(0,0,0,0) 8px,
+      rgba(0,0,0,0) 16px);
+}
+
+/* --- Overlay / Modal / Toast --- */
+.overlay{
+  position:absolute;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding: 18px;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(8px);
+  z-index: 20;
+}
+.overlay.show{ display:flex; }
+
+.modal{
+  width: min(360px, 92%);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.06));
+  border: 1px solid rgba(255,255,255,.16);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  text-align:center;
+}
+.modal h2{
+  margin: 4px 0 8px 0;
+  font-size: 18px;
+}
+.modal p{
+  margin: 0 0 14px 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height:1.35;
+}
+.modal .scoreline{
+  margin: 10px 0 14px 0;
+  font-size: 14px;
+  color: rgba(255,255,255,.90);
+  font-variant-numeric: tabular-nums;
+}
+.modal .row{
+  display:flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.toast{
+  position:absolute;
+  left:50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,.52);
+  border: 1px solid rgba(255,255,255,.14);
+  color: rgba(255,255,255,.90);
+  padding: 8px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  box-shadow: var(--shadow2);
+  opacity:0;
+  pointer-events:none;
+  transition: opacity 180ms ease, transform 180ms ease;
+  z-index: 30;
+}
+.toast.show{
+  opacity:1;
+  transform: translateX(-50%) translateY(-4px);
+}
+
+.srOnly{
+  position:absolute;
+  width:1px;height:1px;
+  padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0,0,0,0);
+  white-space:nowrap;border:0;
+}
+
+/* --- Small-screen tuning --- */
+@media (max-height: 780px){
+  header{ padding: 10px 10px 8px; }
+  .reasoning{ font-size: 12.5px; }
+  ul.rules{ font-size: 12.5px; }
+  .pill{ padding: 9px 10px; }
+  button{ padding: 9px 10px; }
+}
